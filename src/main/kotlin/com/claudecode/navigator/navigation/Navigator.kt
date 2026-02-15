@@ -3,6 +3,8 @@ package com.claudecode.navigator.navigation
 import com.claudecode.navigator.model.NavigationTarget
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.ScrollType
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.IdeFocusManager
@@ -55,8 +57,11 @@ class Navigator(private val project: Project) {
             target.column
         )
 
-        if (descriptor.canNavigate()) {
-            descriptor.navigate(true)
+        // Use openTextEditor instead of descriptor.navigate() — the latter
+        // opens the file but often fails to scroll to the target line.
+        val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
+        if (editor != null) {
+            editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
         } else {
             logger.warn("Cannot navigate to ${target.file.path}")
         }

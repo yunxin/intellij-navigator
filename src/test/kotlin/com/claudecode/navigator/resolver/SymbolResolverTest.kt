@@ -162,4 +162,46 @@ class SymbolResolverTest : BasePlatformTestCase() {
         assertEquals(1, targets.size)
         assertTrue(targets[0].file.path.contains("product.py"))
     }
+
+    // --- self/cls prefix stripping tests ---
+
+    fun `test resolve method with self prefix`() {
+        // "self.save" should strip "self" and find save() methods
+        val targets = resolver.resolve("self.save")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.all { it.description.contains("save") })
+    }
+
+    fun `test resolve method with self and class qualifier`() {
+        // "self.UserModel.save" should strip "self" and resolve as "UserModel.save"
+        val targets = resolver.resolve("self.UserModel.save")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.all { it.description.contains("save") })
+    }
+
+    fun `test resolve method with self and class qualifier and fileHint`() {
+        // "self.UserModel.save" with fileHint should narrow to one result
+        val targets = resolver.resolve("self.UserModel.save", "user.py")
+
+        assertEquals(1, targets.size)
+        assertTrue(targets[0].file.path.contains("user.py"))
+    }
+
+    fun `test resolve class with cls prefix`() {
+        // "cls.UserModel" should strip "cls" and find UserModel
+        val targets = resolver.resolve("cls.UserModel")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.any { it.description.contains("UserModel") })
+    }
+
+    fun `test resolve bare self is not stripped`() {
+        // "self" alone should NOT be stripped (nothing to strip to)
+        val targets = resolver.resolve("self")
+
+        // No symbol named "self" exists, so empty
+        assertTrue(targets.isEmpty())
+    }
 }

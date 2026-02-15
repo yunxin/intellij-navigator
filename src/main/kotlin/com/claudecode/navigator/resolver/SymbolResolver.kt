@@ -33,7 +33,15 @@ class SymbolResolver(private val project: Project) {
      */
     fun resolve(qualifiedName: String, fileHint: String? = null): List<NavigationTarget> {
         return ReadAction.compute<List<NavigationTarget>, Exception> {
-            val parts = qualifiedName.split(".")
+            val parts = qualifiedName.split(".").let { rawParts ->
+                // Strip leading "self" or "cls" — these are Python instance/class
+                // references, not real symbol qualifiers.
+                if (rawParts.size > 1 && rawParts.first() in listOf("self", "cls")) {
+                    rawParts.drop(1)
+                } else {
+                    rawParts
+                }
+            }
             val shortName = parts.last()
             val qualifiers = parts.dropLast(1)
 
