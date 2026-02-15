@@ -7,61 +7,41 @@ import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
 import java.awt.Frame
 
 class Navigator(private val project: Project) {
     private val logger = Logger.getInstance(Navigator::class.java)
 
-    /**
-     * Navigates to the given targets.
-     *
-     * If there's a single target, navigates directly.
-     * If there are multiple targets, shows a selector popup.
-     *
-     * @param targets The navigation targets to navigate to
-     */
     fun navigate(targets: List<NavigationTarget>) {
         if (targets.isEmpty()) {
             logger.warn("No targets to navigate to")
             return
         }
 
-        // Bring IDE to front
         bringToFront()
 
         if (targets.size == 1) {
-            // Defer navigation so bringToFront() focus operations settle first.
-            // Without this, OpenFileDescriptor.navigate() fires before the editor
-            // is fully focused/laid out, causing it to open the file but not scroll
-            // to the target line.
-            ApplicationManager.getApplication().invokeLater {
-                navigateToTarget(targets.first())
-            }
+            navigateToTarget(targets.first())
         } else {
             showSelectorPopup(targets)
         }
     }
 
-    /**
-     * Navigates directly to a single target.
-     */
     fun navigateToTarget(target: NavigationTarget) {
         logger.info("Navigating to ${target.file.path}:${target.line + 1}")
 
-        val descriptor = OpenFileDescriptor(
-            project,
-            target.file,
-            target.line,
-            target.column
-        )
-
-        // Use openTextEditor instead of descriptor.navigate() — the latter
-        // opens the file but often fails to scroll to the target line.
+        val descriptor = OpenFileDescriptor(project, target.file, target.line, target.column)
         val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
+
         if (editor != null) {
-            editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+            // Defer scroll — when a file is first opened the editor component
+            // hasn't been through Swing layout yet (viewport is 0x0), so
+            // scrollToCaret silently does nothing. Posting to the next EDT
+            // cycle gives layout time to complete.
+            ApplicationManager.getApplication().invokeLater {
+                editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+            }
         } else {
             logger.warn("Cannot navigate to ${target.file.path}")
         }
@@ -82,7 +62,6 @@ class Navigator(private val project: Project) {
             }
             frame.toFront()
             frame.requestFocus()
-            IdeFocusManager.getInstance(project).requestFocus(frame, true)
         }
     }
 }
