@@ -1,0 +1,38 @@
+<idea-plugin>
+    <id>com.claudecode.navigator</id>
+    <name>PyCharm Navigator</name>
+    <vendor email="support@example.com" url="https://github.com/claudecode">Claude Code</vendor>
+
+    <description><![CDATA[
+    A PyCharm plugin that accepts navigation requests via TCP socket, resolves file/symbol references,
+    and navigates to the target location. Supports multiple match selection when ambiguous.
+
+    <h3>Features:</h3>
+    <ul>
+        <li>Navigate to files by path (with partial path matching)</li>
+        <li>Navigate to symbols (classes, functions) by name</li>
+        <li>Jump to specific line numbers</li>
+        <li>Selector popup for multiple matches</li>
+    </ul>
+
+    <h3>Usage:</h3>
+    <p>Send JSON requests to TCP port 8765:</p>
+    <pre>
+    {"type": "file", "path": "foo.py", "line": 42}
+    {"type": "symbol", "name": "MyClass.method", "fileHint": "foo.py"}
+    </pre>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.python</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <projectService serviceImplementation="com.claudecode.navigator.NavigatorService"/>
+        <postStartupActivity implementation="com.claudecode.navigator.NavigatorStartupActivity"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="com.claudecode.navigator.NavigatorProjectListener"
+                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
+    </projectListeners>
+</idea-plugin>
