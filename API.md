@@ -18,10 +18,10 @@ Two TCP servers work together:
 
 Send a request to the backend. Check the response `status`:
 
-- **`"ok"`** — single match, file opened, caret moved. Response includes `line` (1-indexed).
+- **`"ok"`** — single match, file opened, caret moved.
   Send a follow-up scroll request to the frontend:
   ```
-  1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok","line":42}
+  1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok"}
   2. frontend (8766): {"action":"scroll"}                        →  scrolls editor to caret
   ```
 
@@ -136,7 +136,7 @@ popup, which scrolls automatically) or `"error"`.
 ### Backend responses (port 8765)
 
 ```json
-{"status":"ok","line":42}
+{"status":"ok"}
 {"status":"multiple","count":3}
 {"status":"error","message":"Not found"}
 ```
@@ -144,9 +144,8 @@ popup, which scrolls automatically) or `"error"`.
 | Field | Type | Description |
 |-------|------|-------------|
 | `status` | string | `"ok"`, `"multiple"`, or `"error"` |
-| `line` | integer | Line number navigated to (1-indexed, only when `status` is `"ok"`) |
 | `count` | integer | Number of matches (only when `status` is `"multiple"`) |
-| `message` | string | Error description (only when `status` is `"error"`) |
+| `message` | string | Diagnostic info or error description |
 
 ### Frontend responses (port 8766)
 

@@ -94,11 +94,7 @@ class RequestHandler(private val project: Project) {
 
         val msg = diagInfo.toString().ifEmpty { null }
         return if (targets.size == 1) {
-            NavigationResponse(
-                status = "ok",
-                line = targets.first().line + 1, // 1-indexed
-                message = msg
-            )
+            NavigationResponse(status = "ok", message = msg)
         } else {
             NavigationResponse(status = "multiple", count = targets.size, message = msg)
         }

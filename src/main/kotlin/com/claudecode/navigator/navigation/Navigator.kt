@@ -52,6 +52,9 @@ class Navigator(private val project: Project) {
             .openTextEditor(descriptor, true)
 
         val diag = if (editor != null) {
+            // openTextEditor doesn't reliably reposition caret on already-open files.
+            // navigateIn() forces caret to descriptor's line/column.
+            descriptor.navigateIn(editor)
             val caret = editor.caretModel.logicalPosition
             val info = "caret=${caret.line + 1}:${caret.column}"
             logger.info("NAV_DIAG: $info")

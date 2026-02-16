@@ -100,17 +100,14 @@ class ScrollServer(
             val editor = FileEditorManager.getInstance(project).selectedTextEditor
             if (editor != null) {
                 val caret = editor.caretModel.logicalPosition
-                editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
                 result.append("scrolled to ${caret.line + 1}:${caret.column}")
                 logger.info("SCROLL: scrollToCaret at ${caret.line + 1}:${caret.column}")
 
-                // On first file open, the editor's AWT layout hasn't completed
-                // (visibleArea.height == 0), so scrollToCaret is silently dropped.
-                // Retry via invokeLater so each attempt runs after pending AWT
-                // layout events on the EDT.
-                if (editor.scrollingModel.visibleArea.height == 0) {
-                    logger.info("SCROLL: editor not laid out yet, scheduling retries")
-                    retryScroll(editor, 0)
+                if (editor.scrollingModel.visibleArea.height > 0) {
+                    editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+                } else {
+                    logger.info("SCROLL: editor not laid out yet, waiting for resize")
+                    scheduleScrollOnResize(editor)
                 }
             } else {
                 result.append("no-editor")
@@ -126,19 +123,21 @@ class ScrollServer(
         }
     }
 
-    private fun retryScroll(editor: com.intellij.openapi.editor.Editor, attempt: Int) {
-        if (attempt > 20) {
-            logger.warn("SCROLL: gave up after $attempt retries")
-            return
-        }
-        ApplicationManager.getApplication().invokeLater {
-            if (editor.isDisposed) return@invokeLater
-            if (editor.scrollingModel.visibleArea.height == 0) {
-                retryScroll(editor, attempt + 1)
-            } else {
-                editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+    private fun scheduleScrollOnResize(editor: com.intellij.openapi.editor.Editor) {
+        val component = editor.contentComponent
+        component.addComponentListener(object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent?) {
+                if (editor.isDisposed) {
+                    component.removeComponentListener(this)
+                    return
+                }
+                if (editor.scrollingModel.visibleArea.height > 0) {
+                    editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+                    component.removeComponentListener(this)
+                    logger.info("SCROLL: scrolled via componentResized")
+                }
             }
-        }
+        })
     }
 
     fun stop() {

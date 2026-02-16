@@ -65,7 +65,6 @@ data class NavigationTarget(
 @Serializable
 data class NavigationResponse(
     val status: String,
-    val line: Int? = null,
     val message: String? = null,
     val count: Int? = null
 ) {
