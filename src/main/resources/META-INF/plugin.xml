@@ -1,10 +1,10 @@
 <idea-plugin>
     <id>com.claudecode.navigator</id>
-    <name>PyCharm Navigator</name>
+    <name>IntelliJ Navigator</name>
     <vendor email="support@example.com" url="https://github.com/claudecode">Claude Code</vendor>
 
     <description><![CDATA[
-    A PyCharm plugin that accepts navigation requests via TCP socket, resolves file/symbol references,
+    An IntelliJ plugin that accepts navigation requests via TCP socket, resolves file/symbol references,
     and navigates to the target location. Supports multiple match selection when ambiguous.
 
     <h3>Features:</h3>

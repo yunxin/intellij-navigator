@@ -7,5 +7,8 @@ build/
 .idea/
 *.iml
 
+# Distribution
+dist/
+
 # OS
 .DS_Store

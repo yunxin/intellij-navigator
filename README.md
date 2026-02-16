@@ -1,11 +1,12 @@
-# PyCharm Navigator Plugin
+# IntelliJ Navigator Plugin
 
-A plugin that enables external tools to navigate PyCharm to specific files, lines, and symbols via TCP socket.
+A plugin that enables external tools to navigate IntelliJ-based IDEs to specific files, lines, and symbols via TCP socket. Tested with PyCharm, compatible with all IntelliJ-based IDEs (WebStorm, GoLand, IntelliJ IDEA, etc.).
 
 ## Features
 
 - Navigate to files by path (partial matching supported)
-- Navigate to symbols (classes, functions, methods)
+- Navigate to symbols (classes, functions, methods, variables, constants)
+- Partial, case-insensitive, and camelCase symbol matching
 - Search by code text when line numbers aren't available
 - Selector popup for multiple matches
 - Works with Claude Code and other tools
@@ -17,8 +18,8 @@ A plugin that enables external tools to navigate PyCharm to specific files, line
 
 ## Quick Start
 
-1. Install plugin from `dist/pycharm-navigator-1.0.0.zip`
-2. Open a project in PyCharm
+1. Build the plugin: `./gradlew buildPlugin` (output in `build/distributions/`)
+2. Open a project in your IDE
 3. Test:
    ```bash
    echo '{"type":"file","path":"your_file.py","line":1}' | nc localhost 8765

@@ -2,15 +2,15 @@ package com.claudecode.navigator.resolver
 
 import com.claudecode.navigator.model.NavigationTarget
 import com.claudecode.navigator.util.PathMatcher
+import com.intellij.navigation.ChooseByNameContributor
+import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
-import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.codeStyle.NameUtil
 import com.jetbrains.python.psi.PyClass
 import com.jetbrains.python.psi.PyFunction
-import com.jetbrains.python.psi.stubs.PyClassNameIndex
-import com.jetbrains.python.psi.stubs.PyFunctionNameIndex
 
 class SymbolResolver(private val project: Project) {
     private val logger = Logger.getInstance(SymbolResolver::class.java)
@@ -18,14 +18,9 @@ class SymbolResolver(private val project: Project) {
     /**
      * Resolves a qualified symbol name to navigation targets.
      *
-     * Uses rightmost part for index lookup, then filters by qualifiers.
-     * If fileHint is provided, results are further filtered by path matching.
-     *
-     * Examples:
-     * - "MyClass" - finds class
-     * - "my_function" - finds function
-     * - "MyClass.method" - finds method in MyClass
-     * - "module.submodule.MyClass" - finds MyClass in that module path
+     * Uses contributor-based search to find all symbol types (classes, functions,
+     * variables, constants). Falls back to partial matching when exact match fails.
+     * Qualifiers are applied softly — they narrow results only when they produce matches.
      *
      * @param qualifiedName The qualified symbol name to find
      * @param fileHint Optional file path hint for filtering results
@@ -47,30 +42,101 @@ class SymbolResolver(private val project: Project) {
 
             logger.debug("Resolving symbol: '$qualifiedName' (shortName: $shortName, qualifiers: $qualifiers, fileHint: $fileHint)")
 
-            val scope = GlobalSearchScope.projectScope(project)
-            val targets = mutableListOf<NavigationTarget>()
+            // Step 1: Exact lookup via contributors (covers all symbol types)
+            var items = findExact(shortName)
 
-            // Search for classes with this short name
-            val classes = PyClassNameIndex.find(shortName, project, scope)
-            for (pyClass in classes) {
-                if (matchesQualifiers(pyClass, qualifiers)) {
-                    pyClass.toNavigationTarget()?.let { targets.add(it) }
-                }
+            // Step 2: Partial match fallback
+            if (items.isEmpty()) {
+                items = findByPartialMatch(shortName)
             }
 
-            // Search for functions with this short name
-            val functions = PyFunctionNameIndex.find(shortName, project, scope)
-            for (pyFunction in functions) {
-                if (matchesQualifiers(pyFunction, qualifiers)) {
-                    pyFunction.toNavigationTarget()?.let { targets.add(it) }
-                }
-            }
+            if (items.isEmpty()) return@compute emptyList()
+
+            // Step 3: Soft qualifier filtering
+            val qualified = applySoftQualifierFilter(items, qualifiers)
+
+            // Step 4: Convert to NavigationTargets
+            val targets = qualified.mapNotNull { it.toNavigationTarget() }
 
             logger.debug("Found ${targets.size} targets for '$qualifiedName'")
 
-            // Apply fileHint as secondary filter
+            // Step 5: Soft file hint filter
             applyFileHintFilter(targets, fileHint)
         }
+    }
+
+    /**
+     * Finds symbols by exact name using all registered symbol contributors.
+     * Covers classes, functions, variables, constants — everything IntelliJ's
+     * "Go to Symbol" UI can find.
+     */
+    private fun findExact(shortName: String): List<NavigationItem> {
+        val results = mutableListOf<NavigationItem>()
+        for (contributor in ChooseByNameContributor.SYMBOL_EP_NAME.extensionList) {
+            results.addAll(contributor.getItemsByName(shortName, shortName, project, false))
+        }
+        return results
+    }
+
+    /**
+     * Finds symbols by partial/fuzzy match when exact lookup fails.
+     * Uses MinusculeMatcher for case-insensitive substring and camelCase matching
+     * (same algorithm as IntelliJ's "Go to Symbol" UI).
+     */
+    private fun findByPartialMatch(shortName: String): List<NavigationItem> {
+        val matcher = NameUtil.buildMatcher("*$shortName", NameUtil.MatchingCaseSensitivity.NONE)
+        val results = mutableListOf<NavigationItem>()
+
+        for (contributor in ChooseByNameContributor.SYMBOL_EP_NAME.extensionList) {
+            val names = contributor.getNames(project, false)
+            for (name in names) {
+                if (matcher.matches(name)) {
+                    results.addAll(contributor.getItemsByName(name, name, project, false))
+                }
+            }
+        }
+        return results
+    }
+
+    /**
+     * Applies qualifier filtering progressively. Each qualifier narrows results
+     * only if it produces matches (soft behavior). Applied right-to-left so the
+     * closest qualifier (e.g. class name) is applied first.
+     */
+    private fun applySoftQualifierFilter(
+        items: List<NavigationItem>, qualifiers: List<String>
+    ): List<NavigationItem> {
+        if (qualifiers.isEmpty() || items.isEmpty()) return items
+
+        var current = items
+        for (qualifier in qualifiers.reversed()) {
+            val filtered = current.filter { elementMatchesQualifier(it, qualifier) }
+            if (filtered.isNotEmpty()) current = filtered
+            // If filtered is empty, skip this qualifier (soft behavior)
+        }
+        return current
+    }
+
+    /**
+     * Checks if a navigation item matches a single qualifier by checking
+     * containing class name, file name, and directory names.
+     */
+    private fun elementMatchesQualifier(item: NavigationItem, qualifier: String): Boolean {
+        val element = item as? PsiElement ?: return false
+        when (element) {
+            is PyFunction -> if (element.containingClass?.name == qualifier) return true
+            is PyClass -> if ((element.parent as? PyClass)?.name == qualifier) return true
+        }
+        val file = element.containingFile?.virtualFile
+        if (file != null) {
+            if (file.nameWithoutExtension == qualifier) return true
+            var dir = file.parent
+            while (dir != null) {
+                if (dir.name == qualifier) return true
+                dir = dir.parent
+            }
+        }
+        return false
     }
 
     /**
@@ -96,83 +162,30 @@ class SymbolResolver(private val project: Project) {
         return if (filtered.isNotEmpty()) filtered else targets
     }
 
-    /**
-     * Checks if an element's qualifier chain matches the expected qualifiers.
-     * Qualifiers are matched from the end (suffix matching).
-     */
-    private fun matchesQualifiers(element: PsiElement, qualifiers: List<String>): Boolean {
-        if (qualifiers.isEmpty()) {
-            return true
-        }
-
-        val elementQualifiers = getQualifierChain(element)
-        if (elementQualifiers.isEmpty()) {
-            // No class-level context to verify against; accept the match
-            return true
-        }
-
-        if (elementQualifiers.size > qualifiers.size) {
-            // Element has more class qualifiers than provided — mismatch
-            return false
-        }
-
-        // Verify that element qualifiers match the rightmost (closest-to-symbol) parts
-        // of the provided qualifiers. Leftmost parts (module/file) are unverifiable here.
-        val qualifierSuffix = qualifiers.takeLast(elementQualifiers.size)
-        return qualifierSuffix == elementQualifiers
-    }
-
-    /**
-     * Gets the qualifier chain for an element (containing class, module path).
-     */
-    private fun getQualifierChain(element: PsiElement): List<String> {
-        val chain = mutableListOf<String>()
-
-        when (element) {
-            is PyFunction -> {
-                // Add containing class if exists
-                element.containingClass?.name?.let { chain.add(it) }
+    private fun NavigationItem.toNavigationTarget(): NavigationTarget? {
+        val element = this as? PsiElement ?: return null
+        val file = element.containingFile?.virtualFile ?: return null
+        val line = getLineNumber(element)
+        val desc = when (element) {
+            is PyClass -> "class ${element.name}"
+            is PyFunction -> if (element.containingClass != null) {
+                "${element.containingClass?.name}.${element.name}()"
+            } else {
+                "${element.name}()"
             }
-            is PyClass -> {
-                // Add containing class if nested
-                (element.parent as? PyClass)?.name?.let { chain.add(it) }
+            else -> {
+                val fileName = file.name
+                "${element.name ?: element.text} ($fileName)"
             }
         }
+        return NavigationTarget(file = file, line = line, description = desc)
+    }
 
-        // Add module path components
-        val file = element.containingFile
-        val moduleName = file?.virtualFile?.nameWithoutExtension
-        if (moduleName != null && moduleName != "__init__") {
-            // Could add package path here if needed
+    private val PsiElement.name: String?
+        get() = when (this) {
+            is com.intellij.psi.PsiNamedElement -> name
+            else -> null
         }
-
-        return chain
-    }
-
-    private fun PyClass.toNavigationTarget(): NavigationTarget? {
-        val file = containingFile?.virtualFile ?: return null
-        val line = getLineNumber(this)
-        return NavigationTarget(
-            file = file,
-            line = line,
-            description = "class $name"
-        )
-    }
-
-    private fun PyFunction.toNavigationTarget(): NavigationTarget? {
-        val file = containingFile?.virtualFile ?: return null
-        val line = getLineNumber(this)
-        val desc = if (containingClass != null) {
-            "${containingClass?.name}.$name()"
-        } else {
-            "$name()"
-        }
-        return NavigationTarget(
-            file = file,
-            line = line,
-            description = desc
-        )
-    }
 
     private fun getLineNumber(element: PsiElement): Int {
         val document = element.containingFile?.viewProvider?.document ?: return 0

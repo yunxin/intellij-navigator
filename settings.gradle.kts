@@ -1,1 +1,1 @@
-rootProject.name = "pycharm-navigator"
+rootProject.name = "intellij-navigator"

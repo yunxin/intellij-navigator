@@ -1,6 +1,6 @@
-# PyCharm Navigator Plugin - API Reference
+# IntelliJ Navigator Plugin - API Reference
 
-TCP protocol for integrating with the PyCharm Navigator plugin.
+TCP protocol for integrating with the IntelliJ Navigator plugin.
 
 ## Connection
 
@@ -30,7 +30,7 @@ Navigate to a file, optionally at a specific line.
 
 ### 2. Symbol Navigation
 
-Navigate to a class, function, or method by qualified name.
+Navigate to a class, function, method, variable, or constant by name.
 
 ```json
 {"type":"symbol","name":"MyClass.method"}
@@ -47,12 +47,19 @@ Navigate to a class, function, or method by qualified name.
 - `"MyClass"` - finds class
 - `"my_function"` - finds function
 - `"MyClass.method"` - finds method in MyClass
+- `"MY_CONSTANT"` - finds module-level constant/variable
+- `"Warm"` - partial prefix match → finds `Warmup`
+- `"warmup"` - case-insensitive → finds `Warmup`
+- `"UV"` - camelCase → finds `URLValue`
+- `"self.method"` - strips `self`/`cls` prefix automatically
 
 **Resolution algorithm:**
-1. Split name by `.`
-2. Use rightmost part for index lookup
-3. Filter by qualifier chain
-4. If `fileHint` provided and matches some results, filter to those (soft matching: if hint matches nothing, it's ignored)
+1. Strip leading `self`/`cls` prefix
+2. Split name by `.`, rightmost part is the symbol name, rest are qualifiers
+3. Exact lookup via all symbol contributors (classes, functions, variables, constants)
+4. If no exact match, fallback to partial matching (prefix, camelCase, case-insensitive)
+5. Soft qualifier filtering — each qualifier narrows results only if it produces matches (e.g., `WrongClass.save` still finds `save`)
+6. If `fileHint` provided and matches some results, filter to those (soft: if hint matches nothing, it's ignored)
 
 ---
 
@@ -109,13 +116,19 @@ echo '{"type":"file","path":"models.py","line":42}' | nc localhost 8765
 
 ```bash
 # Find class
-echo '{"type":"symbol","name":"UserModel"}' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel"}\n' | nc localhost 8765
 
 # Find method in class
-echo '{"type":"symbol","name":"UserModel.save"}' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel.save"}\n' | nc localhost 8765
 
 # Find class with file hint
-echo '{"type":"symbol","name":"UserModel","fileHint":"models.py"}' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel","fileHint":"models.py"}\n' | nc localhost 8765
+
+# Find constant/variable
+printf '{"type":"symbol","name":"NUM_WORKERS"}\n' | nc localhost 8765
+
+# Partial match (prefix, case-insensitive, camelCase)
+printf '{"type":"symbol","name":"Warm"}\n' | nc localhost 8765
 ```
 
 ### Text search

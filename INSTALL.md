@@ -2,24 +2,24 @@
 
 ## Requirements
 
-- PyCharm (Community or Professional)
+- IntelliJ-based IDE (PyCharm, WebStorm, GoLand, IntelliJ IDEA, etc.)
 - Version 2024.1 or later
 
 ## Installation
 
-1. Download `dist/pycharm-navigator-1.0.0.zip` from this repository
-2. In PyCharm: **Settings** → **Plugins** → **⚙️** (gear icon) → **Install Plugin from Disk...**
+1. Build or download `intellij-navigator-1.0.0.zip`
+2. In your IDE: **Settings** → **Plugins** → **⚙️** (gear icon) → **Install Plugin from Disk...**
 3. Select the downloaded zip file
-4. Restart PyCharm
+4. Restart the IDE
 
 ## Verify Installation
 
-1. Open a project in PyCharm
+1. Open a project in your IDE
 2. Run this command in your terminal:
    ```bash
    echo '{"type":"file","path":"any_file.py","line":1}' | nc localhost 8765
    ```
-3. PyCharm should jump to the file
+3. The IDE should jump to the file
 
 ## Platform Setup
 
@@ -37,7 +37,7 @@ sudo yum install nc                   # RHEL/CentOS
 
 ### WSL (Windows Subsystem for Linux)
 
-When connecting from WSL to PyCharm on Windows:
+When connecting from WSL to your IDE on Windows:
 
 1. **Find Windows host IP:**
    ```bash
@@ -82,9 +82,9 @@ $client.Close()
 
 ### Connection refused
 
-1. Ensure PyCharm is running with a project open (server starts when project opens)
-2. Check plugin is installed: **Settings** → **Plugins** → search "PyCharm Navigator"
-3. Check PyCharm logs: **Help** → **Show Log in Finder/Explorer**
+1. Ensure your IDE is running with a project open (server starts when project opens)
+2. Check plugin is installed: **Settings** → **Plugins** → search "IntelliJ Navigator"
+3. Check IDE logs: **Help** → **Show Log in Finder/Explorer**
 
 ### Port already in use
 
@@ -97,9 +97,9 @@ netstat -ano | findstr :8765   # Windows
 ### Plugin not loading
 
 Check the IDE log for errors:
-- macOS: `~/Library/Logs/JetBrains/PyCharm*/idea.log`
-- Linux: `~/.cache/JetBrains/PyCharm*/log/idea.log`
-- Windows: `%APPDATA%\JetBrains\PyCharm*\log\idea.log`
+- macOS: `~/Library/Logs/JetBrains/<IDE>*/idea.log`
+- Linux: `~/.cache/JetBrains/<IDE>*/log/idea.log`
+- Windows: `%APPDATA%\JetBrains\<IDE>*\log\idea.log`
 
 ## Building from Source
 
