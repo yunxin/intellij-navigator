@@ -2,6 +2,7 @@ package com.claudecode.navigator.navigation
 
 import com.claudecode.navigator.model.NavigationTarget
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.PopupStep
 import com.intellij.openapi.ui.popup.util.BaseListPopupStep
@@ -13,7 +14,7 @@ class SelectorPopup(
     private val targets: List<NavigationTarget>,
     private val onSelect: (NavigationTarget) -> Unit
 ) {
-    fun show() {
+    fun show(): JBPopup {
         val step = NavigationTargetPopupStep(targets, onSelect)
         val popup = JBPopupFactory.getInstance()
             .createListPopup(step)
@@ -25,6 +26,8 @@ class SelectorPopup(
         } else {
             popup.showInFocusCenter()
         }
+
+        return popup
     }
 
     private class NavigationTargetPopupStep(

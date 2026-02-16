@@ -8,12 +8,14 @@ import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.wm.WindowManager
 import java.awt.Frame
 import javax.swing.SwingUtilities
 
 class Navigator(private val project: Project) {
     private val logger = Logger.getInstance(Navigator::class.java)
+    private var activePopup: JBPopup? = null
 
     fun navigate(targets: List<NavigationTarget>) {
         if (targets.isEmpty()) {
@@ -21,6 +23,7 @@ class Navigator(private val project: Project) {
             return
         }
 
+        cancelActivePopup()
         bringToFront()
 
         if (targets.size == 1) {
@@ -28,6 +31,15 @@ class Navigator(private val project: Project) {
         } else {
             showSelectorPopup(targets)
         }
+    }
+
+    private fun cancelActivePopup() {
+        activePopup?.let { popup ->
+            if (!popup.isDisposed) {
+                popup.cancel()
+            }
+        }
+        activePopup = null
     }
 
     fun navigateToTarget(target: NavigationTarget) {
@@ -80,7 +92,8 @@ class Navigator(private val project: Project) {
 
     private fun showSelectorPopup(targets: List<NavigationTarget>) {
         logger.info("Showing selector popup for ${targets.size} targets")
-        SelectorPopup(project, targets) { selected ->
+        activePopup = SelectorPopup(project, targets) { selected ->
+            activePopup = null
             navigateToTarget(selected)
         }.show()
     }
