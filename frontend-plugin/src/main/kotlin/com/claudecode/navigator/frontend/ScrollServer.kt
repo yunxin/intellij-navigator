@@ -3,6 +3,7 @@ package com.claudecode.navigator.frontend
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -22,7 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 data class ScrollRequest(
     val action: String,
     val file: String,
-    val line: Int
+    val line: Int,
+    val column: Int
 )
 
 @Serializable
@@ -90,7 +92,7 @@ class ScrollServer(
             val request = json.decodeFromString(ScrollRequest.serializer(), rawJson)
 
             when (request.action) {
-                "scroll" -> scrollToCaret(request.file, request.line)
+                "scroll" -> scrollToCaret(request.file, request.line, request.column)
                 else -> ScrollResponse("error", "Unknown action: ${request.action}")
             }
         } catch (e: Exception) {
@@ -99,11 +101,8 @@ class ScrollServer(
         }
     }
 
-    /**
-     * Reads the current editor state (file path and caret line) on the EDT.
-     * Returns a pair of (filePath, 1-indexed line) or null if no editor is open.
-     */
-    private data class EditorState(val filePath: String, val line: Int, val editor: Editor)
+    /** Reads the current editor file path on the EDT, or null if no editor is open. */
+    private data class EditorState(val filePath: String, val editor: Editor)
 
     private fun readEditorState(): EditorState? {
         var state: EditorState? = null
@@ -111,9 +110,8 @@ class ScrollServer(
             val editor = FileEditorManager.getInstance(project).selectedTextEditor
             if (editor != null) {
                 val vFile = FileDocumentManager.getInstance().getFile(editor.document)
-                val caret = editor.caretModel.logicalPosition
                 if (vFile != null) {
-                    state = EditorState(vFile.path, caret.line + 1, editor)
+                    state = EditorState(vFile.path, editor)
                 }
             }
         }
@@ -137,37 +135,41 @@ class ScrollServer(
         return true
     }
 
-    private suspend fun scrollToCaret(expectedFile: String, expectedLine: Int): ScrollResponse {
+    private suspend fun scrollToCaret(expectedFile: String, expectedLine: Int, expectedColumn: Int): ScrollResponse {
         val pollIntervalMs = 50L
         val maxWaitMs = 3000L
         var waited = 0L
 
-        // Poll until the editor state matches the expected file and line
+        // Poll until the editor has the expected file open, then force-move
+        // the caret.  We don't wait for the caret to propagate via Rd — it's
+        // too slow / unreliable on WSL remote dev.
         while (waited < maxWaitMs) {
             val state = readEditorState()
-            if (state != null && pathMatches(state.filePath, expectedFile) && state.line == expectedLine) {
-                return doScroll(state.editor)
+            if (state != null && pathMatches(state.filePath, expectedFile)) {
+                return forceScrollTo(state.editor, expectedLine, expectedColumn)
             }
             delay(pollIntervalMs)
             waited += pollIntervalMs
         }
 
-        // Timeout — scroll whatever is currently open
-        logger.warn("SCROLL: timed out waiting for file=$expectedFile line=$expectedLine (waited ${waited}ms)")
+        // Timeout — file never opened; scroll whatever is open
+        logger.warn("SCROLL: timed out waiting for file=$expectedFile (waited ${waited}ms)")
         val state = readEditorState()
         return if (state != null) {
-            doScroll(state.editor)
+            forceScrollTo(state.editor, expectedLine, expectedColumn)
         } else {
             ScrollResponse("error", "no-editor after timeout")
         }
     }
 
-    private fun doScroll(editor: Editor): ScrollResponse {
+    private fun forceScrollTo(editor: Editor, line: Int, column: Int): ScrollResponse {
         val result = StringBuilder()
         ApplicationManager.getApplication().invokeAndWait {
+            val targetLine = (line - 1).coerceIn(0, editor.document.lineCount - 1)
+            editor.caretModel.moveToLogicalPosition(LogicalPosition(targetLine, column))
             val caret = editor.caretModel.logicalPosition
             result.append("scrolled to ${caret.line + 1}:${caret.column}")
-            logger.info("SCROLL: scrollToCaret at ${caret.line + 1}:${caret.column}")
+            logger.info("SCROLL: forced caret to $line:$column, scrollToCaret at ${caret.line + 1}:${caret.column}")
 
             if (editor.scrollingModel.visibleArea.height > 0) {
                 editor.scrollingModel.scrollToCaret(ScrollType.CENTER)

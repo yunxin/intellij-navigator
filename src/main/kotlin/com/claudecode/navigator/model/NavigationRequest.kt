@@ -68,7 +68,8 @@ data class NavigationResponse(
     val message: String? = null,
     val count: Int? = null,
     val file: String? = null,
-    val line: Int? = null
+    val line: Int? = null,
+    val column: Int? = null
 ) {
     companion object {
         private val json = Json { encodeDefaults = false }

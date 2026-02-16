@@ -98,7 +98,8 @@ class RequestHandler(private val project: Project) {
                 status = "ok",
                 message = navResult.diagMessage,
                 file = navResult.filePath,
-                line = navResult.line
+                line = navResult.line,
+                column = navResult.column
             )
         } else if (targets.size > 1) {
             NavigationResponse(status = "multiple", count = targets.size, message = navResult?.diagMessage)
