@@ -12,10 +12,11 @@ export JAVA_HOME="/Applications/PyCharm CE.app/Contents/jbr/Contents/Home"
 - Run tests: `./gradlew test`
 - Build output: `build/distributions/intellij-navigator-*.zip`
 
-After building, copy the zip to the public repo:
+After building, copy the zip to the public repo and update the GitHub release:
 
 ```bash
 cp build/distributions/intellij-navigator-1.0.0.zip ../agent-term-public/intellij-navigator-1.0.0.zip
+cd ../agent-term-public && gh release upload v0.1.0 intellij-navigator-1.0.0.zip --clobber
 ```
 
 ## E2E Testing
