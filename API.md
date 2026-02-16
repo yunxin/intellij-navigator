@@ -18,11 +18,11 @@ Two TCP servers work together:
 
 Send a request to the backend. Check the response `status`:
 
-- **`"ok"`** — single match, file opened, caret moved.
-  Send a follow-up scroll request to the frontend:
+- **`"ok"`** — single match, file opened, caret moved. Response includes `file` and `line`.
+  Forward them in a scroll request to the frontend:
   ```
-  1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok"}
-  2. frontend (8766): {"action":"scroll"}                        →  scrolls editor to caret
+  1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok","file":"/project/foo.py","line":42}
+  2. frontend (8766): {"action":"scroll","file":"/project/foo.py","line":42}  →  scrolls editor to caret
   ```
 
 - **`"multiple"`** — multiple matches, selector popup shown in IDE. No scroll request needed.
@@ -115,19 +115,27 @@ Navigate by searching file contents for a code snippet.
 
 ### 4. Scroll to Caret (Frontend, port 8766)
 
-Scroll the active editor to the current caret position.
+Scroll the active editor to the current caret position. The `file` and `line`
+fields from the backend response must be forwarded here so the frontend can
+wait for the editor state to match before scrolling (handles async Rd protocol
+propagation on remote dev).
 
 ```json
-{"action":"scroll"}
+{"action":"scroll","file":"/project/foo.py","line":42}
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | string | yes | Must be `"scroll"` |
+| `file` | string | yes | File path from backend response |
+| `line` | integer | yes | Line number from backend response (1-indexed) |
 
-Send this after a backend response with `status: "ok"` to ensure the editor
-scrolls to the target line. Not needed for `"multiple"` (user selects from
-popup, which scrolls automatically) or `"error"`.
+The frontend polls until the editor has the expected file open at the expected
+caret line (up to 3s), then scrolls. Path matching is suffix-based to handle
+different path prefixes across local/WSL/thin-client.
+
+Send this after a backend response with `status: "ok"`. Not needed for
+`"multiple"` (user selects from popup, which scrolls automatically) or `"error"`.
 
 ---
 
@@ -136,7 +144,7 @@ popup, which scrolls automatically) or `"error"`.
 ### Backend responses (port 8765)
 
 ```json
-{"status":"ok"}
+{"status":"ok","message":"caret=42:0","file":"/project/foo.py","line":42}
 {"status":"multiple","count":3}
 {"status":"error","message":"Not found"}
 ```
@@ -146,6 +154,8 @@ popup, which scrolls automatically) or `"error"`.
 | `status` | string | `"ok"`, `"multiple"`, or `"error"` |
 | `count` | integer | Number of matches (only when `status` is `"multiple"`) |
 | `message` | string | Diagnostic info or error description |
+| `file` | string | Absolute file path (only when `status` is `"ok"`) |
+| `line` | integer | 1-indexed line number (only when `status` is `"ok"`) |
 
 ### Frontend responses (port 8766)
 
@@ -168,9 +178,10 @@ popup, which scrolls automatically) or `"error"`.
 ```bash
 # Step 1: open file and move caret (backend)
 printf '{"type":"file","path":"models.py","line":42}\n' | nc -w 2 localhost 8765
+# → {"status":"ok","message":"caret=42:0","file":"/project/models.py","line":42}
 
-# Step 2: scroll to caret (frontend)
-printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
+# Step 2: scroll to caret (frontend) — forward file/line from backend response
+printf '{"action":"scroll","file":"/project/models.py","line":42}\n' | nc -w 2 localhost 8766
 ```
 
 ### Symbol navigation
@@ -178,7 +189,8 @@ printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
 ```bash
 # Find class
 printf '{"type":"symbol","name":"UserModel"}\n' | nc -w 2 localhost 8765
-printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
+# → {"status":"ok","file":"/project/models.py","line":10,...}
+printf '{"action":"scroll","file":"/project/models.py","line":10}\n' | nc -w 2 localhost 8766
 
 # Find method in class
 printf '{"type":"symbol","name":"UserModel.save"}\n' | nc -w 2 localhost 8765
@@ -197,7 +209,8 @@ printf '{"type":"symbol","name":"Warm"}\n' | nc -w 2 localhost 8765
 
 ```bash
 printf '{"type":"text","text":"def main():"}\n' | nc -w 2 localhost 8765
-printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
+# → {"status":"ok","file":"/project/app.py","line":5,...}
+printf '{"action":"scroll","file":"/project/app.py","line":5}\n' | nc -w 2 localhost 8766
 
 # Text search with file hint
 printf '{"type":"text","text":"def main():","fileHint":"app.py"}\n' | nc -w 2 localhost 8765
@@ -225,7 +238,7 @@ def navigate(request: dict, host="localhost") -> dict:
     """Send navigation request to backend, then scroll via frontend."""
     result = send(request, host, BACKEND_PORT)
     if result.get("status") == "ok":
-        send({"action": "scroll"}, host, FRONTEND_PORT)
+        send({"action": "scroll", "file": result["file"], "line": result["line"]}, host, FRONTEND_PORT)
     return result
 
 # Examples

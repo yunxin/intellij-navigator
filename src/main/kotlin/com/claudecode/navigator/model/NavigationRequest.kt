@@ -66,7 +66,9 @@ data class NavigationTarget(
 data class NavigationResponse(
     val status: String,
     val message: String? = null,
-    val count: Int? = null
+    val count: Int? = null,
+    val file: String? = null,
+    val line: Int? = null
 ) {
     companion object {
         private val json = Json { encodeDefaults = false }

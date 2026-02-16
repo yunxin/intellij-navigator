@@ -2,6 +2,7 @@ package com.claudecode.navigator.server
 
 import com.claudecode.navigator.BuildInfo
 import com.claudecode.navigator.model.*
+import com.claudecode.navigator.navigation.NavigationResult
 import com.claudecode.navigator.navigation.Navigator
 import com.claudecode.navigator.resolver.FileResolver
 import com.claudecode.navigator.resolver.SymbolResolver
@@ -82,21 +83,27 @@ class RequestHandler(private val project: Project) {
     }
 
     private fun navigate(targets: List<NavigationTarget>): NavigationResponse {
-        val diagInfo = StringBuilder()
+        var result: NavigationResult? = null
 
         // Run navigation synchronously on EDT so it completes before the TCP
         // response returns. This prevents agent-term from stealing focus before
         // navigation executes, and lets us return diagnostic info.
         ApplicationManager.getApplication().invokeAndWait {
-            val diag = navigator.navigate(targets)
-            diagInfo.append(diag)
+            result = navigator.navigate(targets)
         }
 
-        val msg = diagInfo.toString().ifEmpty { null }
-        return if (targets.size == 1) {
-            NavigationResponse(status = "ok", message = msg)
+        val navResult = result
+        return if (targets.size == 1 && navResult != null) {
+            NavigationResponse(
+                status = "ok",
+                message = navResult.diagMessage,
+                file = navResult.filePath,
+                line = navResult.line
+            )
+        } else if (targets.size > 1) {
+            NavigationResponse(status = "multiple", count = targets.size, message = navResult?.diagMessage)
         } else {
-            NavigationResponse(status = "multiple", count = targets.size, message = msg)
+            NavigationResponse(status = "ok", message = navResult?.diagMessage)
         }
     }
 }

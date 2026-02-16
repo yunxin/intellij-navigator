@@ -2,7 +2,9 @@ package com.claudecode.navigator.frontend
 
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.*
@@ -17,7 +19,11 @@ import java.net.SocketException
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Serializable
-data class ScrollRequest(val action: String)
+data class ScrollRequest(
+    val action: String,
+    val file: String,
+    val line: Int
+)
 
 @Serializable
 data class ScrollResponse(val status: String, val message: String? = null)
@@ -79,12 +85,12 @@ class ScrollServer(
         }
     }
 
-    private fun handleRequest(rawJson: String): ScrollResponse {
+    private suspend fun handleRequest(rawJson: String): ScrollResponse {
         return try {
             val request = json.decodeFromString(ScrollRequest.serializer(), rawJson)
 
             when (request.action) {
-                "scroll" -> scrollToCaret()
+                "scroll" -> scrollToCaret(request.file, request.line)
                 else -> ScrollResponse("error", "Unknown action: ${request.action}")
             }
         } catch (e: Exception) {
@@ -93,34 +99,84 @@ class ScrollServer(
         }
     }
 
-    private fun scrollToCaret(): ScrollResponse {
-        val result = StringBuilder()
+    /**
+     * Reads the current editor state (file path and caret line) on the EDT.
+     * Returns a pair of (filePath, 1-indexed line) or null if no editor is open.
+     */
+    private data class EditorState(val filePath: String, val line: Int, val editor: Editor)
 
+    private fun readEditorState(): EditorState? {
+        var state: EditorState? = null
         ApplicationManager.getApplication().invokeAndWait {
             val editor = FileEditorManager.getInstance(project).selectedTextEditor
             if (editor != null) {
+                val vFile = FileDocumentManager.getInstance().getFile(editor.document)
                 val caret = editor.caretModel.logicalPosition
-                result.append("scrolled to ${caret.line + 1}:${caret.column}")
-                logger.info("SCROLL: scrollToCaret at ${caret.line + 1}:${caret.column}")
-
-                if (editor.scrollingModel.visibleArea.height > 0) {
-                    editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
-                } else {
-                    logger.info("SCROLL: editor not laid out yet, waiting for resize")
-                    scheduleScrollOnResize(editor)
+                if (vFile != null) {
+                    state = EditorState(vFile.path, caret.line + 1, editor)
                 }
-            } else {
-                result.append("no-editor")
-                logger.warn("SCROLL: no active text editor")
             }
         }
+        return state
+    }
 
-        val msg = result.toString()
-        return if (msg == "no-editor") {
-            ScrollResponse("error", msg)
-        } else {
-            ScrollResponse("ok", msg)
+    /**
+     * Suffix-based path matching: checks if either path ends with the other
+     * when compared segment by segment from the end.
+     */
+    private fun pathMatches(candidate: String, request: String): Boolean {
+        val candidateSegments = candidate.replace('\\', '/').trimEnd('/').split('/').filter { it.isNotEmpty() }
+        val requestSegments = request.replace('\\', '/').trimEnd('/').split('/').filter { it.isNotEmpty() }
+        if (candidateSegments.isEmpty() || requestSegments.isEmpty()) return false
+        val minLen = minOf(candidateSegments.size, requestSegments.size)
+        for (i in 1..minLen) {
+            if (!candidateSegments[candidateSegments.size - i].equals(requestSegments[requestSegments.size - i], ignoreCase = true)) {
+                return false
+            }
         }
+        return true
+    }
+
+    private suspend fun scrollToCaret(expectedFile: String, expectedLine: Int): ScrollResponse {
+        val pollIntervalMs = 50L
+        val maxWaitMs = 3000L
+        var waited = 0L
+
+        // Poll until the editor state matches the expected file and line
+        while (waited < maxWaitMs) {
+            val state = readEditorState()
+            if (state != null && pathMatches(state.filePath, expectedFile) && state.line == expectedLine) {
+                return doScroll(state.editor)
+            }
+            delay(pollIntervalMs)
+            waited += pollIntervalMs
+        }
+
+        // Timeout — scroll whatever is currently open
+        logger.warn("SCROLL: timed out waiting for file=$expectedFile line=$expectedLine (waited ${waited}ms)")
+        val state = readEditorState()
+        return if (state != null) {
+            doScroll(state.editor)
+        } else {
+            ScrollResponse("error", "no-editor after timeout")
+        }
+    }
+
+    private fun doScroll(editor: Editor): ScrollResponse {
+        val result = StringBuilder()
+        ApplicationManager.getApplication().invokeAndWait {
+            val caret = editor.caretModel.logicalPosition
+            result.append("scrolled to ${caret.line + 1}:${caret.column}")
+            logger.info("SCROLL: scrollToCaret at ${caret.line + 1}:${caret.column}")
+
+            if (editor.scrollingModel.visibleArea.height > 0) {
+                editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
+            } else {
+                logger.info("SCROLL: editor not laid out yet, waiting for resize")
+                scheduleScrollOnResize(editor)
+            }
+        }
+        return ScrollResponse("ok", result.toString())
     }
 
     private fun scheduleScrollOnResize(editor: com.intellij.openapi.editor.Editor) {
