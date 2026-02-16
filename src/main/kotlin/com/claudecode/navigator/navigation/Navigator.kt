@@ -1,7 +1,6 @@
 package com.claudecode.navigator.navigation
 
 import com.claudecode.navigator.model.NavigationTarget
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
@@ -11,8 +10,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.WindowManager
 import java.awt.Frame
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
+import javax.swing.SwingUtilities
 
 class Navigator(private val project: Project) {
     private val logger = Logger.getInstance(Navigator::class.java)
@@ -40,34 +38,44 @@ class Navigator(private val project: Project) {
 
         if (editor != null) {
             val pos = LogicalPosition(target.line, target.column)
-            val component = editor.contentComponent
-
-            if (component.height > 0) {
-                // Editor already laid out (file was already open) — scroll immediately.
-                // openTextEditor doesn't re-apply the descriptor's line/column for
-                // already-open files, so we must explicitly move caret and scroll.
-                moveAndScroll(editor, pos)
-            } else {
-                // Editor not yet laid out (file just opened) — viewport is 0x0 so
-                // scrollTo would compute offset 0 (top of file). Wait for Swing to
-                // assign the real size, then scroll.
-                component.addComponentListener(object : ComponentAdapter() {
-                    override fun componentResized(e: ComponentEvent) {
-                        component.removeComponentListener(this)
-                        moveAndScroll(editor, pos)
-                    }
-                })
-            }
+            moveAndScroll(editor, pos, 0)
         } else {
             logger.warn("Cannot navigate to ${target.file.path}")
         }
     }
 
-    private fun moveAndScroll(editor: Editor, pos: LogicalPosition) {
+    /**
+     * Moves the caret and scrolls the viewport to center the target line.
+     *
+     * On a freshly opened editor, ScrollingModelImpl has an internal deferred
+     * state that silently swallows scrollTo calls. We detect this by checking
+     * whether the target line is actually visible after scrolling. If not, we
+     * retry on the next EDT cycle until the editor finishes initialization and
+     * the scroll takes effect.
+     */
+    private fun moveAndScroll(editor: Editor, pos: LogicalPosition, attempt: Int) {
+        if (attempt > 20) {
+            logger.warn("Gave up scrolling to $pos after $attempt attempts")
+            return
+        }
+
         editor.caretModel.moveToLogicalPosition(pos)
         editor.scrollingModel.disableAnimation()
         editor.scrollingModel.scrollTo(pos, ScrollType.CENTER)
         editor.scrollingModel.enableAnimation()
+
+        // Verify the scroll actually took effect
+        val vOffset = editor.scrollingModel.verticalScrollOffset
+        val viewportH = editor.scrollingModel.visibleArea.height
+        val targetY = pos.line * editor.lineHeight
+        val needsRetry = viewportH == 0 || (targetY < vOffset || targetY > vOffset + viewportH)
+        if (needsRetry) {
+            // Either viewport isn't ready (height=0) or target line is not
+            // visible (scroll was swallowed by deferred state). Retry.
+            SwingUtilities.invokeLater {
+                moveAndScroll(editor, pos, attempt + 1)
+            }
+        }
     }
 
     private fun showSelectorPopup(targets: List<NavigationTarget>) {
