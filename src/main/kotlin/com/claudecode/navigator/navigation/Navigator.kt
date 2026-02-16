@@ -3,7 +3,6 @@ package com.claudecode.navigator.navigation
 import com.claudecode.navigator.model.NavigationTarget
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -49,43 +48,39 @@ class Navigator(private val project: Project) {
         val editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
 
         if (editor != null) {
-            val pos = LogicalPosition(target.line, target.column)
-            moveAndScroll(editor, pos, 0)
+            // openTextEditor handles caret + scroll through IntelliJ's navigation
+            // infrastructure (which supports remote dev). However, on freshly opened
+            // editors the scroll can be silently deferred. Retry using navigateIn()
+            // (NOT raw editor.scrollTo) so the retry also goes through the proper
+            // navigation layer that works across local and remote environments.
+            retryNavigateIfNeeded(descriptor, editor, 0)
         } else {
             logger.warn("Cannot navigate to ${target.file.path}")
         }
     }
 
     /**
-     * Moves the caret and scrolls the viewport to center the target line.
-     *
-     * On a freshly opened editor, ScrollingModelImpl has an internal deferred
-     * state that silently swallows scrollTo calls. We detect this by checking
-     * whether the target line is actually visible after scrolling. If not, we
-     * retry on the next EDT cycle until the editor finishes initialization and
-     * the scroll takes effect.
+     * Verifies the target line is visible. If not, retries via
+     * OpenFileDescriptor.navigateIn() which goes through IntelliJ's
+     * navigation infrastructure (remote-dev aware), unlike raw
+     * editor.scrollingModel.scrollTo() which only affects the backend.
      */
-    private fun moveAndScroll(editor: Editor, pos: LogicalPosition, attempt: Int) {
+    private fun retryNavigateIfNeeded(descriptor: OpenFileDescriptor, editor: Editor, attempt: Int) {
         if (attempt > 20) {
-            logger.warn("Gave up scrolling to $pos after $attempt attempts")
+            logger.warn("Gave up scrolling to line ${descriptor.line + 1} after $attempt attempts")
             return
         }
 
-        editor.caretModel.moveToLogicalPosition(pos)
-        editor.scrollingModel.disableAnimation()
-        editor.scrollingModel.scrollTo(pos, ScrollType.CENTER)
-        editor.scrollingModel.enableAnimation()
-
-        // Verify the scroll actually took effect
         val vOffset = editor.scrollingModel.verticalScrollOffset
         val viewportH = editor.scrollingModel.visibleArea.height
-        val targetY = pos.line * editor.lineHeight
+        val targetY = descriptor.line * editor.lineHeight
         val needsRetry = viewportH == 0 || (targetY < vOffset || targetY > vOffset + viewportH)
+
         if (needsRetry) {
-            // Either viewport isn't ready (height=0) or target line is not
-            // visible (scroll was swallowed by deferred state). Retry.
             SwingUtilities.invokeLater {
-                moveAndScroll(editor, pos, attempt + 1)
+                if (!descriptor.canNavigate()) return@invokeLater
+                descriptor.navigateIn(editor)
+                retryNavigateIfNeeded(descriptor, editor, attempt + 1)
             }
         }
     }

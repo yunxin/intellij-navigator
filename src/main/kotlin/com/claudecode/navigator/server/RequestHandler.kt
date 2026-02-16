@@ -1,5 +1,6 @@
 package com.claudecode.navigator.server
 
+import com.claudecode.navigator.BuildInfo
 import com.claudecode.navigator.model.*
 import com.claudecode.navigator.navigation.Navigator
 import com.claudecode.navigator.resolver.FileResolver
@@ -16,7 +17,19 @@ class RequestHandler(private val project: Project) {
     private val textResolver = TextResolver(project)
     private val navigator = Navigator(project)
 
+    private companion object {
+        const val TRIAL_DAYS = 90
+    }
+
     fun handle(jsonRequest: String): NavigationResponse {
+        val daysSinceBuild = (System.currentTimeMillis() - BuildInfo.BUILD_EPOCH_MILLIS) /
+            (1000 * 60 * 60 * 24)
+        if (daysSinceBuild >= TRIAL_DAYS) {
+            return NavigationResponse.error(
+                "Plugin trial expired. Please download a newer version from the releases page."
+            )
+        }
+
         return try {
             val request = NavigationRequest.parse(jsonRequest)
             logger.info("Parsed request: $request")

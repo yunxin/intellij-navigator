@@ -140,11 +140,12 @@ class SymbolResolverTest : BasePlatformTestCase() {
         assertTrue(targets[0].file.path.contains("user.py"))
     }
 
-    fun `test resolve class with wrong class qualifier rejects`() {
-        // "WrongClass.save" should NOT match UserModel.save
+    fun `test resolve with wrong class qualifier falls back softly`() {
+        // "WrongClass.save" should still find save methods (soft qualifier skips non-matching qualifier)
         val targets = resolver.resolve("WrongClass.save")
 
-        assertTrue(targets.none { it.description.contains("UserModel") })
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.all { it.description.contains("save") })
     }
 
     fun `test resolve function with module qualifier`() {
@@ -203,5 +204,72 @@ class SymbolResolverTest : BasePlatformTestCase() {
 
         // No symbol named "self" exists, so empty
         assertTrue(targets.isEmpty())
+    }
+
+    // --- Constants/variables tests ---
+
+    fun `test resolve constant by name`() {
+        val targets = resolver.resolve("AVR_INTERVAL")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.any { it.file.path.contains("utils.py") })
+    }
+
+    // --- Partial matching tests ---
+
+    fun `test partial match camelCase`() {
+        // "UM" should match "UserModel" via camelCase matching
+        val targets = resolver.resolve("UM")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.any { it.description.contains("UserModel") })
+    }
+
+    fun `test partial match prefix`() {
+        // "Product" should match "ProductModel" as a prefix
+        val targets = resolver.resolve("Product")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.any { it.description.contains("ProductModel") })
+    }
+
+    fun `test partial match case insensitive`() {
+        // "usermodel" (lowercase) should match "UserModel"
+        val targets = resolver.resolve("usermodel")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.any { it.description.contains("UserModel") })
+    }
+
+    fun `test partial match with qualifier`() {
+        // "UserModel.sav" — partial prefix match "sav" for "save", qualified by UserModel
+        val targets = resolver.resolve("UserModel.sav")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.all { it.description.contains("save") })
+    }
+
+    fun `test soft qualifier with nonexistent prefix`() {
+        // "nonexistent.UserModel.save" — "nonexistent" qualifier matches nothing, skipped softly
+        val targets = resolver.resolve("nonexistent.UserModel.save")
+
+        assertTrue(targets.isNotEmpty())
+        assertTrue(targets.all { it.description.contains("save") })
+    }
+
+    fun `test self with unknown property returns empty gracefully`() {
+        // "self.some_property" — "some_property" doesn't exist
+        val targets = resolver.resolve("self.some_property")
+
+        assertTrue(targets.isEmpty())
+    }
+
+    fun `test exact match preferred over partial`() {
+        // "save" should return exact matches only (not partial like "save_data")
+        val targets = resolver.resolve("save")
+
+        assertTrue(targets.isNotEmpty())
+        // All results should be exact "save" matches
+        assertTrue(targets.all { it.description.contains("save") })
     }
 }

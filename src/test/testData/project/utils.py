@@ -1,3 +1,5 @@
+AVR_INTERVAL = 100
+
 def helper():
     """A helper function."""
     return "helped"
