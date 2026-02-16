@@ -4,9 +4,36 @@ TCP protocol for integrating with the IntelliJ Navigator plugin.
 
 ## Connection
 
+Two TCP servers work together:
+
+| Server | Port | Purpose |
+|--------|------|---------|
+| **Backend** | 8765 | Resolve files/symbols, open file, move caret |
+| **Frontend** | 8766 | Scroll editor to caret position |
+
 - **Protocol:** TCP
-- **Port:** 8765
 - **Format:** Newline-delimited JSON
+
+### Navigation flow
+
+Send a request to the backend. Check the response `status`:
+
+- **`"ok"`** — single match, file opened, caret moved. Response includes `line` (1-indexed).
+  Send a follow-up scroll request to the frontend:
+  ```
+  1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok","line":42}
+  2. frontend (8766): {"action":"scroll"}                        →  scrolls editor to caret
+  ```
+
+- **`"multiple"`** — multiple matches, selector popup shown in IDE. No scroll request needed.
+  The user selects from the popup, which navigates and scrolls automatically.
+
+- **`"error"`** — no matches found. No further action.
+
+The two-step flow for `"ok"` is required for remote development (WSL/Gateway) where
+the backend runs headlessly and cannot scroll the editor. The frontend plugin runs on
+the thin client where scroll APIs work. For local development, both plugins run in the
+same IDE instance.
 
 ## Request Types
 
@@ -86,58 +113,95 @@ Navigate by searching file contents for a code snippet.
 
 ---
 
-## Response
+### 4. Scroll to Caret (Frontend, port 8766)
 
-All requests return a JSON response:
+Scroll the active editor to the current caret position.
 
 ```json
-{"status":"ok"}
+{"action":"scroll"}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | string | yes | Must be `"scroll"` |
+
+Send this after a backend response with `status: "ok"` to ensure the editor
+scrolls to the target line. Not needed for `"multiple"` (user selects from
+popup, which scrolls automatically) or `"error"`.
+
+---
+
+## Response
+
+### Backend responses (port 8765)
+
+```json
+{"status":"ok","line":42}
 {"status":"multiple","count":3}
 {"status":"error","message":"Not found"}
 ```
 
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `"ok"`, `"multiple"`, or `"error"` |
+| `line` | integer | Line number navigated to (1-indexed, only when `status` is `"ok"`) |
+| `count` | integer | Number of matches (only when `status` is `"multiple"`) |
+| `message` | string | Error description (only when `status` is `"error"`) |
+
+### Frontend responses (port 8766)
+
+```json
+{"status":"ok","message":"scrolled to 42:0"}
+{"status":"error","message":"no-editor"}
+```
+
 | Status | Meaning |
 |--------|---------|
-| `ok` | Single match found, navigated directly |
-| `multiple` | Multiple matches, selector popup shown |
-| `error` | No matches or other error |
+| `ok` | Editor scrolled to caret position |
+| `error` | No active editor or other error |
 
 ---
 
 ## Examples
 
-### File navigation
+### File navigation (two-step)
 
 ```bash
-echo '{"type":"file","path":"models.py","line":42}' | nc localhost 8765
+# Step 1: open file and move caret (backend)
+printf '{"type":"file","path":"models.py","line":42}\n' | nc -w 2 localhost 8765
+
+# Step 2: scroll to caret (frontend)
+printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
 ```
 
 ### Symbol navigation
 
 ```bash
 # Find class
-printf '{"type":"symbol","name":"UserModel"}\n' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel"}\n' | nc -w 2 localhost 8765
+printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
 
 # Find method in class
-printf '{"type":"symbol","name":"UserModel.save"}\n' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel.save"}\n' | nc -w 2 localhost 8765
 
 # Find class with file hint
-printf '{"type":"symbol","name":"UserModel","fileHint":"models.py"}\n' | nc localhost 8765
+printf '{"type":"symbol","name":"UserModel","fileHint":"models.py"}\n' | nc -w 2 localhost 8765
 
 # Find constant/variable
-printf '{"type":"symbol","name":"NUM_WORKERS"}\n' | nc localhost 8765
+printf '{"type":"symbol","name":"NUM_WORKERS"}\n' | nc -w 2 localhost 8765
 
 # Partial match (prefix, case-insensitive, camelCase)
-printf '{"type":"symbol","name":"Warm"}\n' | nc localhost 8765
+printf '{"type":"symbol","name":"Warm"}\n' | nc -w 2 localhost 8765
 ```
 
 ### Text search
 
 ```bash
-echo '{"type":"text","text":"def main():"}' | nc localhost 8765
+printf '{"type":"text","text":"def main():"}\n' | nc -w 2 localhost 8765
+printf '{"action":"scroll"}\n' | nc -w 2 localhost 8766
 
 # Text search with file hint
-echo '{"type":"text","text":"def main():","fileHint":"app.py"}' | nc localhost 8765
+printf '{"type":"text","text":"def main():","fileHint":"app.py"}\n' | nc -w 2 localhost 8765
 ```
 
 ---
@@ -148,12 +212,22 @@ echo '{"type":"text","text":"def main():","fileHint":"app.py"}' | nc localhost 8
 import socket
 import json
 
-def navigate(request: dict, host="localhost", port=8765) -> dict:
+BACKEND_PORT = 8765
+FRONTEND_PORT = 8766
+
+def send(request: dict, host="localhost", port=BACKEND_PORT) -> dict:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((host, port))
         s.sendall((json.dumps(request) + "\n").encode())
         response = s.recv(1024).decode()
         return json.loads(response)
+
+def navigate(request: dict, host="localhost") -> dict:
+    """Send navigation request to backend, then scroll via frontend."""
+    result = send(request, host, BACKEND_PORT)
+    if result.get("status") == "ok":
+        send({"action": "scroll"}, host, FRONTEND_PORT)
+    return result
 
 # Examples
 navigate({"type": "file", "path": "foo.py", "line": 10})

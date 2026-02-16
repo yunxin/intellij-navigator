@@ -8,32 +8,91 @@ export JAVA_HOME="/Applications/PyCharm CE.app/Contents/jbr/Contents/Home"
 
 ## Commands
 
-- Build plugin: `./gradlew buildPlugin`
+- Build backend plugin: `./gradlew buildPlugin`
+- Build frontend plugin: `cd frontend-plugin && ./gradlew buildPlugin`
 - Run tests: `./gradlew test`
-- Build output: `build/distributions/intellij-navigator-*.zip`
+- Backend output: `build/distributions/intellij-navigator-*.zip`
+- Frontend output: `frontend-plugin/build/distributions/intellij-navigator-frontend-*.zip`
 
-After building, copy the zip to the public repo and update the GitHub release:
+After building, copy the zips to the public repo and upload to the GitHub release.
+**Important:** Run the `gh release upload` as a separate command using an absolute
+path for the repo (`-R` flag or `cwd`), then verify with `gh release view`.
 
 ```bash
-cp build/distributions/intellij-navigator-1.0.0.zip ../agent-term-public/intellij-navigator-1.0.0.zip
-cd ../agent-term-public && gh release upload v0.1.0 intellij-navigator-1.0.0.zip --clobber
+# Step 1: Copy zips
+cp build/distributions/intellij-navigator-1.0.0.zip ../agent-term-public/
+cp frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.0.zip ../agent-term-public/
+
+# Step 2: Upload (use -R to avoid cwd issues)
+gh release upload v0.1.0 \
+  ../agent-term-public/intellij-navigator-1.0.0.zip \
+  ../agent-term-public/intellij-navigator-frontend-1.0.0.zip \
+  --clobber -R yunxin/agent-term-public
+
+# Step 3: Verify upload succeeded
+gh release view v0.1.0 -R yunxin/agent-term-public
 ```
+
+## Architecture
+
+Two separate plugins that work together:
+
+- **Backend plugin** (port 8765): Resolves files/symbols, opens files, moves caret.
+  Runs on the IDE that has access to the project (local PyCharm or WSL backend).
+- **Frontend plugin** (port 8766): Scrolls the editor to the current caret position.
+  Runs on the IDE that has a real display (local PyCharm or thin client on Windows).
+
+On local dev, both plugins run in the same PyCharm instance. On WSL remote dev,
+the backend runs on WSL and the frontend runs on the JetBrains thin client.
+
+Navigation flow (agent-term):
+1. Send file/symbol request to port 8765 → backend opens file + moves caret
+2. Send scroll request to port 8766 → frontend calls `scrollToCaret(CENTER)`
 
 ## E2E Testing
 
-Launch sandbox IDE with the plugin:
+Use the sandbox IDE — it loads both plugins automatically, no manual install needed.
+
+### Build and launch sandbox
 
 ```bash
-./gradlew runIde
+# Build both plugins and launch sandbox (one-liner)
+cd frontend-plugin && ./gradlew buildPlugin && cd .. && ./gradlew runIde
 ```
 
-Wait for the IDE to open and a project to load, then send TCP requests with `printf` + `nc`:
+Wait for the IDE to open and a project to load (~30s), then verify both ports:
 
 ```bash
-printf '{"type":"symbol","name":"MyClass"}\n' | nc -w 2 localhost 8765
+lsof -i :8765 | grep LISTEN && lsof -i :8766 | grep LISTEN
 ```
 
-Use `printf` (not `echo`) to avoid shell quoting issues with JSON.
+**Note:** The sandbox must be launched from the root project (`./gradlew runIde`),
+not from `frontend-plugin/`. The root `runIde` copies the frontend plugin into the
+sandbox and disables sandbox mode so both plugins load.
+
+### Sending requests
+
+Use `printf` + `nc` (not `echo`, to avoid shell quoting issues with JSON):
+
+```bash
+# Step 1: backend opens file and moves caret
+printf '{"type":"file","path":"some_file.py","line":50}\n' | nc -w 3 localhost 8765
+
+# Step 2: frontend scrolls to caret (only needed when step 1 returns status "ok")
+printf '{"action":"scroll"}\n' | nc -w 3 localhost 8766
+```
+
+Backend response:
+
+```json
+{"status":"ok","line":50}
+```
+
+Frontend response:
+
+```json
+{"status":"ok","message":"scrolled to 50:0"}
+```
 
 ### Sanity check categories
 

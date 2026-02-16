@@ -82,14 +82,25 @@ class RequestHandler(private val project: Project) {
     }
 
     private fun navigate(targets: List<NavigationTarget>): NavigationResponse {
-        ApplicationManager.getApplication().invokeLater {
-            navigator.navigate(targets)
+        val diagInfo = StringBuilder()
+
+        // Run navigation synchronously on EDT so it completes before the TCP
+        // response returns. This prevents agent-term from stealing focus before
+        // navigation executes, and lets us return diagnostic info.
+        ApplicationManager.getApplication().invokeAndWait {
+            val diag = navigator.navigate(targets)
+            diagInfo.append(diag)
         }
 
+        val msg = diagInfo.toString().ifEmpty { null }
         return if (targets.size == 1) {
-            NavigationResponse.ok()
+            NavigationResponse(
+                status = "ok",
+                line = targets.first().line + 1, // 1-indexed
+                message = msg
+            )
         } else {
-            NavigationResponse.multiple(targets.size)
+            NavigationResponse(status = "multiple", count = targets.size, message = msg)
         }
     }
 }

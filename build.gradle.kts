@@ -88,6 +88,25 @@ tasks.named("compileKotlin") { dependsOn(generateBuildInfo) }
 
 kotlin { sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/main/kotlin")) } }
 
+// For runIde: copy frontend plugin into sandbox and disable sandbox mode
+// so the IDE loads both plugins. Build frontend first:
+//   cd frontend-plugin && ./gradlew buildPlugin
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask>("runIde") {
+    val zipFile = file("frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.0.zip")
+    val sandboxPlugins = layout.buildDirectory.dir("idea-sandbox/PC-${providers.gradleProperty("platformVersion").get()}/plugins")
+    doFirst {
+        if (zipFile.exists()) {
+            copy {
+                from(zipTree(zipFile))
+                into(sandboxPlugins)
+            }
+        }
+    }
+    jvmArgumentProviders.add(CommandLineArgumentProvider {
+        listOf("-Didea.plugin.in.sandbox.mode=false")
+    })
+}
+
 tasks {
     wrapper {
         gradleVersion = "8.5"
