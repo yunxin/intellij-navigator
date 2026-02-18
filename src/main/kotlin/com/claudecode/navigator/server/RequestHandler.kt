@@ -9,7 +9,9 @@ import com.claudecode.navigator.resolver.SymbolResolver
 import com.claudecode.navigator.resolver.TextResolver
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 
 class RequestHandler(private val project: Project) {
     private val logger = Logger.getInstance(RequestHandler::class.java)
@@ -59,6 +61,28 @@ class RequestHandler(private val project: Project) {
             targets
         }
 
+        // Validate matchText against actual line content before navigating
+        if (request.matchText != null && request.line != null) {
+            val target = targetsWithLine.first()
+            val doc = FileDocumentManager.getInstance().getDocument(target.file)
+            if (doc != null) {
+                val lineIndex = target.line
+                if (lineIndex in 0 until doc.lineCount) {
+                    val lineStart = doc.getLineStartOffset(lineIndex)
+                    val lineEnd = doc.getLineEndOffset(lineIndex)
+                    val lineContent = doc.getText(TextRange(lineStart, lineEnd)).trim()
+                    if (lineContent != request.matchText) {
+                        return NavigationResponse(
+                            status = "text_mismatch",
+                            message = "Line ${request.line} does not contain expected text",
+                            file = target.file.path,
+                            line = request.line
+                        )
+                    }
+                }
+            }
+        }
+
         return navigate(targetsWithLine)
     }
 
@@ -73,7 +97,7 @@ class RequestHandler(private val project: Project) {
     }
 
     private fun handleTextRequest(request: TextRequest): NavigationResponse {
-        val targets = textResolver.resolve(request.text, request.fileHint)
+        val targets = textResolver.resolve(request.text)
 
         if (targets.isEmpty()) {
             return NavigationResponse.error("Text not found: ${request.text.take(50)}")

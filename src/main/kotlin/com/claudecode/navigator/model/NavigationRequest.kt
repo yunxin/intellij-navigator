@@ -26,7 +26,8 @@ sealed class NavigationRequest {
 data class FileRequest(
     override val type: String = "file",
     val path: String,
-    val line: Int? = null
+    val line: Int? = null,
+    val matchText: String? = null
 ) : NavigationRequest()
 
 @Serializable
