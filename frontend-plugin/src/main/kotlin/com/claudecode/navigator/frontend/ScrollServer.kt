@@ -97,7 +97,7 @@ class ScrollServer(
             }
         } catch (e: Exception) {
             logger.error("Failed to handle scroll request: $rawJson", e)
-            ScrollResponse("error", e.message ?: "Unknown error")
+            ScrollResponse("error", e.message)
         }
     }
 
@@ -158,7 +158,7 @@ class ScrollServer(
         return if (state != null) {
             forceScrollTo(state.editor, expectedLine, expectedColumn)
         } else {
-            ScrollResponse("error", "no-editor after timeout")
+            ScrollResponse("no_editor")
         }
     }
 

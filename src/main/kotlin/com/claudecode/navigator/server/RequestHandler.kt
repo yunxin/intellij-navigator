@@ -28,9 +28,7 @@ class RequestHandler(private val project: Project) {
         val daysSinceBuild = (System.currentTimeMillis() - BuildInfo.BUILD_EPOCH_MILLIS) /
             (1000 * 60 * 60 * 24)
         if (daysSinceBuild >= TRIAL_DAYS) {
-            return NavigationResponse.error(
-                "Plugin trial expired. Please download a newer version from the releases page."
-            )
+            return NavigationResponse(status = "expired")
         }
 
         return try {
@@ -44,7 +42,7 @@ class RequestHandler(private val project: Project) {
             }
         } catch (e: Exception) {
             logger.error("Failed to handle request: $jsonRequest", e)
-            NavigationResponse.error(e.message ?: "Unknown error")
+            NavigationResponse(status = "error", message = e.message)
         }
     }
 
@@ -52,7 +50,7 @@ class RequestHandler(private val project: Project) {
         val targets = fileResolver.resolve(request.path)
 
         if (targets.isEmpty()) {
-            return NavigationResponse.error("File not found: ${request.path}")
+            return NavigationResponse(status = "not_found", message = "file: ${request.path}")
         }
 
         val targetsWithLine = if (request.line != null) {
@@ -72,12 +70,29 @@ class RequestHandler(private val project: Project) {
                     val lineEnd = doc.getLineEndOffset(lineIndex)
                     val lineContent = doc.getText(TextRange(lineStart, lineEnd)).trim()
                     if (lineContent != request.matchText) {
-                        return NavigationResponse(
-                            status = "text_mismatch",
-                            message = "Line ${request.line} does not contain expected text",
-                            file = target.file.path,
-                            line = request.line
-                        )
+                        // Spiral outward: check ±1, ±2, ... ±200
+                        var foundLine: Int? = null
+                        for (delta in 1..200) {
+                            for (candidate in listOf(lineIndex - delta, lineIndex + delta)) {
+                                if (candidate in 0 until doc.lineCount) {
+                                    val cStart = doc.getLineStartOffset(candidate)
+                                    val cEnd = doc.getLineEndOffset(candidate)
+                                    val cContent = doc.getText(TextRange(cStart, cEnd)).trim()
+                                    if (cContent == request.matchText) {
+                                        foundLine = candidate
+                                        break
+                                    }
+                                }
+                            }
+                            if (foundLine != null) break
+                        }
+                        if (foundLine != null) {
+                            val matched = foundLine
+                            val correctedTargets = targetsWithLine.map { it.copy(line = matched) }
+                            val result = navigate(correctedTargets)
+                            return result.copy(status = "text_moved")
+                        }
+                        return NavigationResponse(status = "not_found", message = "matchText not in file")
                     }
                 }
             }
@@ -90,7 +105,7 @@ class RequestHandler(private val project: Project) {
         val targets = symbolResolver.resolve(request.name, request.fileHint)
 
         if (targets.isEmpty()) {
-            return NavigationResponse.error("Symbol not found: ${request.name}")
+            return NavigationResponse(status = "not_found", message = "symbol: ${request.name}")
         }
 
         return navigate(targets)
@@ -100,7 +115,7 @@ class RequestHandler(private val project: Project) {
         val targets = textResolver.resolve(request.text)
 
         if (targets.isEmpty()) {
-            return NavigationResponse.error("Text not found: ${request.text.take(50)}")
+            return NavigationResponse(status = "not_found", message = "text: ${request.text.take(50)}")
         }
 
         return navigate(targets)
@@ -120,15 +135,14 @@ class RequestHandler(private val project: Project) {
         return if (targets.size == 1 && navResult != null) {
             NavigationResponse(
                 status = "ok",
-                message = navResult.diagMessage,
                 file = navResult.filePath,
                 line = navResult.line,
                 column = navResult.column
             )
         } else if (targets.size > 1) {
-            NavigationResponse(status = "multiple", count = targets.size, message = navResult?.diagMessage)
+            NavigationResponse(status = "multiple", count = targets.size)
         } else {
-            NavigationResponse(status = "ok", message = navResult?.diagMessage)
+            NavigationResponse(status = "ok")
         }
     }
 }

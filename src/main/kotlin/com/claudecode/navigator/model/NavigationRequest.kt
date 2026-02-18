@@ -77,7 +77,6 @@ data class NavigationResponse(
 
         fun ok() = NavigationResponse(status = "ok")
         fun multiple(count: Int) = NavigationResponse(status = "multiple", count = count)
-        fun error(message: String) = NavigationResponse(status = "error", message = message)
 
         fun NavigationResponse.toJson(): String = json.encodeToString(serializer(), this)
     }
