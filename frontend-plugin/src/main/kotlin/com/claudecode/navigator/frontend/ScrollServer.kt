@@ -163,13 +163,19 @@ class ScrollServer(
     }
 
     private fun forceScrollTo(editor: Editor, line: Int, column: Int): ScrollResponse {
-        val result = StringBuilder()
+        var lineCount = 0
         ApplicationManager.getApplication().invokeAndWait {
-            val targetLine = (line - 1).coerceIn(0, editor.document.lineCount - 1)
+            lineCount = editor.document.lineCount
+        }
+        if (line > lineCount) {
+            logger.info("SCROLL: file_too_short — requested line $line but file has $lineCount lines")
+            return ScrollResponse("file_too_short")
+        }
+
+        ApplicationManager.getApplication().invokeAndWait {
+            val targetLine = (line - 1).coerceAtLeast(0)
             editor.caretModel.moveToLogicalPosition(LogicalPosition(targetLine, column))
-            val caret = editor.caretModel.logicalPosition
-            result.append("scrolled to ${caret.line + 1}:${caret.column}")
-            logger.info("SCROLL: forced caret to $line:$column, scrollToCaret at ${caret.line + 1}:${caret.column}")
+            logger.info("SCROLL: forced caret to $line:$column")
 
             if (editor.scrollingModel.visibleArea.height > 0) {
                 editor.scrollingModel.scrollToCaret(ScrollType.CENTER)
@@ -178,7 +184,7 @@ class ScrollServer(
                 scheduleScrollOnResize(editor)
             }
         }
-        return ScrollResponse("ok", result.toString())
+        return ScrollResponse("ok")
     }
 
     private fun scheduleScrollOnResize(editor: com.intellij.openapi.editor.Editor) {
