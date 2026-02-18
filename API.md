@@ -22,7 +22,7 @@ Send a request to the backend. Check the response `status`:
   Forward them in a scroll request to the frontend:
   ```
   1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok","file":"/project/foo.py","line":42}
-  2. frontend (8766): {"action":"scroll","file":"/project/foo.py","line":42}  →  scrolls editor to caret
+  2. frontend (8766): {"action":"scroll","file":"/project/foo.py","line":42,"column":0}  →  {"status":"ok"}
   ```
 
 - **`"multiple"`** — multiple matches, selector popup shown in IDE. No scroll request needed.
@@ -37,111 +37,43 @@ same IDE instance.
 
 ## Request Types
 
-### 1. File Navigation
-
-Navigate to a file, optionally at a specific line.
+### File — open a file, optionally at a line
 
 ```json
 {"type":"file","path":"foo/bar.py","line":42}
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `type` | string | yes | Must be `"file"` |
-| `path` | string | yes | File path (partial matching supported) |
-| `line` | integer | no | Line number (1-indexed) |
+Data class: `FileRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
-**Path matching:** Uses suffix-based matching. `"foo/bar.py"` matches `/project/src/foo/bar.py`.
-
----
-
-### 2. Symbol Navigation
-
-Navigate to a class, function, method, variable, or constant by name.
+### Symbol — navigate to a class, function, method, or variable by name
 
 ```json
-{"type":"symbol","name":"MyClass.method"}
-{"type":"symbol","name":"MyClass","fileHint":"models.py"}
+{"type":"symbol","name":"MyClass.method","fileHint":"models.py"}
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `type` | string | yes | Must be `"symbol"` |
-| `name` | string | yes | Qualified symbol name |
-| `fileHint` | string | no | File path hint (partial matching supported) |
+Data class: `SymbolRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
-**Name formats:**
-- `"MyClass"` - finds class
-- `"my_function"` - finds function
-- `"MyClass.method"` - finds method in MyClass
-- `"MY_CONSTANT"` - finds module-level constant/variable
-- `"Warm"` - partial prefix match → finds `Warmup`
-- `"warmup"` - case-insensitive → finds `Warmup`
-- `"UV"` - camelCase → finds `URLValue`
-- `"self.method"` - strips `self`/`cls` prefix automatically
-
-**Resolution algorithm:**
-1. Strip leading `self`/`cls` prefix
-2. Split name by `.`, rightmost part is the symbol name, rest are qualifiers
-3. Exact lookup via all symbol contributors (classes, functions, variables, constants)
-4. If no exact match, fallback to partial matching (prefix, camelCase, case-insensitive)
-5. Soft qualifier filtering — each qualifier narrows results only if it produces matches (e.g., `WrongClass.save` still finds `save`)
-6. If `fileHint` provided and matches some results, filter to those (soft: if hint matches nothing, it's ignored)
-
----
-
-### 3. Text Search
-
-Navigate by searching file contents for a code snippet.
+### Text — search file contents for a code snippet
 
 ```json
-{"type":"text","text":"def process():"}
-{"type":"text","text":"def main():","fileHint":"app.py"}
+{"type":"text","text":"def process():","fileHint":"app.py"}
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `type` | string | yes | Must be `"text"` |
-| `text` | string | yes | Text to search for (trimmed before search) |
-| `fileHint` | string | no | File path hint (partial matching supported) |
+Data class: `TextRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
-**Use case:** When you have a code snippet but no line number.
+### Scroll — scroll the frontend editor to the caret (port 8766)
 
-**Performance:** Searches all `.py` files. Fast for small/medium projects, slower for large projects.
-
-**File hint:** If `fileHint` is provided and matches some results, only those are returned (soft matching: if hint matches nothing, it's ignored).
-
----
-
-### 4. Scroll to Caret (Frontend, port 8766)
-
-Scroll the active editor to the current caret position. The `file` and `line`
-fields from the backend response must be forwarded here so the frontend can
-wait for the editor state to match before scrolling (handles async Rd protocol
-propagation on remote dev).
+Send after a backend `"ok"` response. Forward the `file` and `line` from that response.
 
 ```json
-{"action":"scroll","file":"/project/foo.py","line":42}
+{"action":"scroll","file":"/project/foo.py","line":42,"column":0}
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `action` | string | yes | Must be `"scroll"` |
-| `file` | string | yes | File path from backend response |
-| `line` | integer | yes | Line number from backend response (1-indexed) |
+Data class: `ScrollRequest` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
 
-The frontend polls until the editor has the expected file open at the expected
-caret line (up to 3s), then scrolls. Path matching is suffix-based to handle
-different path prefixes across local/WSL/thin-client.
+## Responses
 
-Send this after a backend response with `status: "ok"`. Not needed for
-`"multiple"` (user selects from popup, which scrolls automatically) or `"error"`.
-
----
-
-## Response
-
-### Backend responses (port 8765)
+### Backend (port 8765)
 
 ```json
 {"status":"ok","message":"caret=42:0","file":"/project/foo.py","line":42}
@@ -149,72 +81,18 @@ Send this after a backend response with `status: "ok"`. Not needed for
 {"status":"error","message":"Not found"}
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | string | `"ok"`, `"multiple"`, or `"error"` |
-| `count` | integer | Number of matches (only when `status` is `"multiple"`) |
-| `message` | string | Diagnostic info or error description |
-| `file` | string | Absolute file path (only when `status` is `"ok"`) |
-| `line` | integer | 1-indexed line number (only when `status` is `"ok"`) |
+Data class: `NavigationResponse` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
-### Frontend responses (port 8766)
+### Frontend (port 8766)
 
 ```json
-{"status":"ok","message":"scrolled to 42:0"}
-{"status":"error","message":"no-editor"}
+{"status":"ok"}
+{"status":"file_too_short"}
+{"status":"no_editor"}
+{"status":"error","message":"..."}
 ```
 
-| Status | Meaning |
-|--------|---------|
-| `ok` | Editor scrolled to caret position |
-| `error` | No active editor or other error |
-
----
-
-## Examples
-
-### File navigation (two-step)
-
-```bash
-# Step 1: open file and move caret (backend)
-printf '{"type":"file","path":"models.py","line":42}\n' | nc -w 2 localhost 8765
-# → {"status":"ok","message":"caret=42:0","file":"/project/models.py","line":42}
-
-# Step 2: scroll to caret (frontend) — forward file/line from backend response
-printf '{"action":"scroll","file":"/project/models.py","line":42}\n' | nc -w 2 localhost 8766
-```
-
-### Symbol navigation
-
-```bash
-# Find class
-printf '{"type":"symbol","name":"UserModel"}\n' | nc -w 2 localhost 8765
-# → {"status":"ok","file":"/project/models.py","line":10,...}
-printf '{"action":"scroll","file":"/project/models.py","line":10}\n' | nc -w 2 localhost 8766
-
-# Find method in class
-printf '{"type":"symbol","name":"UserModel.save"}\n' | nc -w 2 localhost 8765
-
-# Find class with file hint
-printf '{"type":"symbol","name":"UserModel","fileHint":"models.py"}\n' | nc -w 2 localhost 8765
-
-# Find constant/variable
-printf '{"type":"symbol","name":"NUM_WORKERS"}\n' | nc -w 2 localhost 8765
-
-# Partial match (prefix, case-insensitive, camelCase)
-printf '{"type":"symbol","name":"Warm"}\n' | nc -w 2 localhost 8765
-```
-
-### Text search
-
-```bash
-printf '{"type":"text","text":"def main():"}\n' | nc -w 2 localhost 8765
-# → {"status":"ok","file":"/project/app.py","line":5,...}
-printf '{"action":"scroll","file":"/project/app.py","line":5}\n' | nc -w 2 localhost 8766
-
-# Text search with file hint
-printf '{"type":"text","text":"def main():","fileHint":"app.py"}\n' | nc -w 2 localhost 8765
-```
+Data class: `ScrollResponse` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
 
 ---
 
@@ -238,7 +116,7 @@ def navigate(request: dict, host="localhost") -> dict:
     """Send navigation request to backend, then scroll via frontend."""
     result = send(request, host, BACKEND_PORT)
     if result.get("status") == "ok":
-        send({"action": "scroll", "file": result["file"], "line": result["line"]}, host, FRONTEND_PORT)
+        send({"action": "scroll", "file": result["file"], "line": result["line"], "column": 0}, host, FRONTEND_PORT)
     return result
 
 # Examples
@@ -248,15 +126,3 @@ navigate({"type": "symbol", "name": "MyClass", "fileHint": "models.py"})
 navigate({"type": "text", "text": "def main():"})
 navigate({"type": "text", "text": "def main():", "fileHint": "app.py"})
 ```
-
----
-
-## Path Matching
-
-Paths are matched from the end (suffix matching):
-
-| Request | Candidate | Match |
-|---------|-----------|-------|
-| `bar.py` | `/project/src/foo/bar.py` | ✓ |
-| `foo/bar.py` | `/project/src/foo/bar.py` | ✓ |
-| `src/bar.py` | `/project/src/foo/bar.py` | ✗ |

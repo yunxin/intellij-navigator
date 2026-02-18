@@ -75,20 +75,10 @@ Use `printf` + `nc` (not `echo`, to avoid shell quoting issues with JSON):
 printf '{"type":"file","path":"some_file.py","line":50}\n' | nc -w 3 localhost 8765
 
 # Step 2: frontend scrolls to caret (only needed when step 1 returns status "ok")
-printf '{"action":"scroll"}\n' | nc -w 3 localhost 8766
+printf '{"action":"scroll","file":"some_file.py","line":50,"column":0}\n' | nc -w 3 localhost 8766
 ```
 
-Backend response:
-
-```json
-{"status":"ok","line":50}
-```
-
-Frontend response:
-
-```json
-{"status":"ok","message":"scrolled to 50:0"}
-```
+See API.md for response format and status codes.
 
 ### Sanity check categories
 
