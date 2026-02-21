@@ -41,7 +41,13 @@ same IDE instance.
 
 ```json
 {"type":"file","path":"foo/bar.py","line":42}
+{"type":"file","path":"foo/bar.py","matchText":"def process():"}
 ```
+
+- **line** (optional): 1-indexed line number.
+- **matchText** (optional): expected trimmed line content.
+  - With **line + matchText**: validates the line; spirals ±200 if mismatch (`"text_moved"`).
+  - With **matchText only** (no line): searches the file top-to-bottom for the first match.
 
 Data class: `FileRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 

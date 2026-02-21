@@ -11,6 +11,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.util.TextRange
 
 class RequestHandler(private val project: Project) {
@@ -50,7 +51,7 @@ class RequestHandler(private val project: Project) {
         val targets = fileResolver.resolve(request.path)
 
         if (targets.isEmpty()) {
-            return NavigationResponse(status = "not_found", message = "file: ${request.path}")
+            return NavigationResponse(status = "not_found", message = "file not found")
         }
 
         val targetsWithLine = if (request.line != null) {
@@ -59,41 +60,35 @@ class RequestHandler(private val project: Project) {
             targets
         }
 
-        // Validate matchText against actual line content before navigating
-        if (request.matchText != null && request.line != null) {
+        if (request.matchText != null) {
             val target = targetsWithLine.first()
             val doc = FileDocumentManager.getInstance().getDocument(target.file)
             if (doc != null) {
-                val lineIndex = target.line
-                if (lineIndex in 0 until doc.lineCount) {
-                    val lineStart = doc.getLineStartOffset(lineIndex)
-                    val lineEnd = doc.getLineEndOffset(lineIndex)
-                    val lineContent = doc.getText(TextRange(lineStart, lineEnd)).trim()
-                    if (lineContent != request.matchText) {
-                        // Spiral outward: check ±1, ±2, ... ±200
-                        var foundLine: Int? = null
-                        for (delta in 1..200) {
-                            for (candidate in listOf(lineIndex - delta, lineIndex + delta)) {
-                                if (candidate in 0 until doc.lineCount) {
-                                    val cStart = doc.getLineStartOffset(candidate)
-                                    val cEnd = doc.getLineEndOffset(candidate)
-                                    val cContent = doc.getText(TextRange(cStart, cEnd)).trim()
-                                    if (cContent == request.matchText) {
-                                        foundLine = candidate
-                                        break
-                                    }
-                                }
+                if (request.line != null) {
+                    // Validate matchText against the given line; spiral if mismatch
+                    val lineIndex = target.line
+                    if (lineIndex in 0 until doc.lineCount) {
+                        val lineStart = doc.getLineStartOffset(lineIndex)
+                        val lineEnd = doc.getLineEndOffset(lineIndex)
+                        val lineContent = doc.getText(TextRange(lineStart, lineEnd)).trim()
+                        if (lineContent != request.matchText) {
+                            val foundLine = searchFileForText(doc, request.matchText, lineIndex)
+                            if (foundLine != null) {
+                                val correctedTargets = targetsWithLine.map { it.copy(line = foundLine) }
+                                val result = navigate(correctedTargets)
+                                return result.copy(status = "text_moved")
                             }
-                            if (foundLine != null) break
+                            return NavigationResponse(status = "not_found", message = "matchText not in file")
                         }
-                        if (foundLine != null) {
-                            val matched = foundLine
-                            val correctedTargets = targetsWithLine.map { it.copy(line = matched) }
-                            val result = navigate(correctedTargets)
-                            return result.copy(status = "text_moved")
-                        }
-                        return NavigationResponse(status = "not_found", message = "matchText not in file")
                     }
+                } else {
+                    // No line given — search entire file for matchText
+                    val foundLine = searchFileForText(doc, request.matchText)
+                    if (foundLine != null) {
+                        val matchedTargets = targets.map { it.copy(line = foundLine) }
+                        return navigate(matchedTargets)
+                    }
+                    return NavigationResponse(status = "not_found", message = "matchText not in file")
                 }
             }
         }
@@ -119,6 +114,32 @@ class RequestHandler(private val project: Project) {
         }
 
         return navigate(targets)
+    }
+
+    /**
+     * Search a document for a line matching [text]. When [hint] is given, spiral
+     * outward from that 0-indexed line (±1, ±2, …±200). Otherwise scan top-to-bottom.
+     * Returns the 0-indexed line number or null.
+     */
+    private fun searchFileForText(doc: Document, text: String, hint: Int? = null): Int? {
+        if (hint != null) {
+            for (delta in 1..200) {
+                for (candidate in listOf(hint - delta, hint + delta)) {
+                    if (candidate in 0 until doc.lineCount) {
+                        val s = doc.getLineStartOffset(candidate)
+                        val e = doc.getLineEndOffset(candidate)
+                        if (doc.getText(TextRange(s, e)).trim() == text) return candidate
+                    }
+                }
+            }
+        } else {
+            for (i in 0 until doc.lineCount) {
+                val s = doc.getLineStartOffset(i)
+                val e = doc.getLineEndOffset(i)
+                if (doc.getText(TextRange(s, e)).trim() == text) return i
+            }
+        }
+        return null
     }
 
     private fun navigate(targets: List<NavigationTarget>): NavigationResponse {
