@@ -44,6 +44,7 @@ object PathMatcher {
         return path
             .replace('\\', '/')
             .trimEnd('/')
+            .let { if (it.startsWith("~/")) it.substring(2) else it }
             .split('/')
             .filter { it.isNotEmpty() }
     }

@@ -69,6 +69,27 @@ class PathMatcherTest {
     }
 
     @Test
+    fun `tilde home path matches absolute path`() {
+        assertTrue(PathMatcher.pathMatches(
+            "/home/user/primary/modules/BPO/flow/epoch.py",
+            "~/primary/modules/BPO/flow/epoch.py"
+        ))
+    }
+
+    @Test
+    fun `tilde path suffix matches`() {
+        assertTrue(PathMatcher.pathMatches(
+            "/Users/yunxin/project/src/utils.py",
+            "~/project/src/utils.py"
+        ))
+    }
+
+    @Test
+    fun `getFileName handles tilde path`() {
+        assertEquals("epoch.py", PathMatcher.getFileName("~/primary/modules/BPO/flow/epoch.py"))
+    }
+
+    @Test
     fun `different filenames do not match`() {
         assertFalse(PathMatcher.pathMatches("/foo/bar.py", "/foo/baz.py"))
         assertFalse(PathMatcher.pathMatches("/foo/test.py", "other.py"))
