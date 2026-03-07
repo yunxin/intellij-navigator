@@ -1,6 +1,19 @@
 # IntelliJ Navigator Plugin
 
-A plugin that enables external tools to navigate IntelliJ-based IDEs to specific files, lines, and symbols via TCP socket. Tested with PyCharm, compatible with all IntelliJ-based IDEs (WebStorm, GoLand, IntelliJ IDEA, etc.).
+IDE navigation plugins for [AgentTerm](https://github.com/yunxin/agent-term). Enables AgentTerm (or any TCP client) to navigate IntelliJ-based IDEs to specific files, lines, and symbols.
+
+Tested with PyCharm, compatible with all IntelliJ-based IDEs (WebStorm, GoLand, IntelliJ IDEA, etc.).
+
+## Plugin Roles
+
+Two plugins work together to handle navigation in JetBrains Remote Development:
+
+| Plugin | Port | Install on | Role |
+|--------|------|------------|------|
+| **intellij-navigator** (backend) | 8765 | **Host** IDE | Resolves file paths and symbols, opens files, moves the caret |
+| **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport to the caret position |
+
+In a local (non-remote) setup, install both plugins in the same IDE.
 
 ## Features
 
@@ -9,7 +22,6 @@ A plugin that enables external tools to navigate IntelliJ-based IDEs to specific
 - Partial, case-insensitive, and camelCase symbol matching
 - Search by code text when line numbers aren't available
 - Selector popup for multiple matches
-- Works with Claude Code and other tools
 
 ## Documentation
 
