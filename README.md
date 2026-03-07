@@ -23,6 +23,10 @@ In a local (non-remote) setup, install both plugins in the same IDE.
 - Search by code text when line numbers aren't available
 - Selector popup for multiple matches
 
+## Download
+
+Pre-built plugin zips are available on the [AgentTerm releases page](https://github.com/yunxin/agent-term/releases).
+
 ## Documentation
 
 - **[Installation Guide](INSTALL.md)** - Setup and configuration for users
