@@ -69,25 +69,6 @@ intellijPlatform {
     }
 }
 
-val generateBuildInfo by tasks.registering {
-    val outputDir = layout.buildDirectory.dir("generated/main/kotlin")
-    outputs.dir(outputDir)
-    doLast {
-        val file = outputDir.get().file("com/claudecode/navigator/BuildInfo.kt").asFile
-        file.parentFile.mkdirs()
-        file.writeText("""
-            package com.claudecode.navigator
-            object BuildInfo {
-                const val BUILD_EPOCH_MILLIS = ${System.currentTimeMillis()}L
-            }
-        """.trimIndent())
-    }
-}
-
-tasks.named("compileKotlin") { dependsOn(generateBuildInfo) }
-
-kotlin { sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/main/kotlin")) } }
-
 // For runIde: copy frontend plugin into sandbox and disable sandbox mode
 // so the IDE loads both plugins. Build frontend first:
 //   cd frontend-plugin && ./gradlew buildPlugin

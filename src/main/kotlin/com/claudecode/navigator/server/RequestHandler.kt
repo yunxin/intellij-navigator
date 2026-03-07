@@ -1,6 +1,5 @@
 package com.claudecode.navigator.server
 
-import com.claudecode.navigator.BuildInfo
 import com.claudecode.navigator.model.*
 import com.claudecode.navigator.navigation.NavigationResult
 import com.claudecode.navigator.navigation.Navigator
@@ -21,17 +20,9 @@ class RequestHandler(private val project: Project) {
     private val textResolver = TextResolver(project)
     private val navigator = Navigator(project)
 
-    private companion object {
-        const val TRIAL_DAYS = 90
-    }
+    private companion object
 
     fun handle(jsonRequest: String): NavigationResponse {
-        val daysSinceBuild = (System.currentTimeMillis() - BuildInfo.BUILD_EPOCH_MILLIS) /
-            (1000 * 60 * 60 * 24)
-        if (daysSinceBuild >= TRIAL_DAYS) {
-            return NavigationResponse(status = "expired")
-        }
-
         return try {
             val request = NavigationRequest.parse(jsonRequest)
             logger.info("Parsed request: $request")

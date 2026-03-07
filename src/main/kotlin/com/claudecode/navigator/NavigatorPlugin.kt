@@ -57,15 +57,6 @@ class NavigatorStartupActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         logger.info("Navigator startup activity executing for project: ${project.name}")
-
-        val daysSinceBuild = (System.currentTimeMillis() - BuildInfo.BUILD_EPOCH_MILLIS) / (1000 * 60 * 60 * 24)
-        val daysLeft = 90 - daysSinceBuild
-        if (daysLeft <= 0) {
-            logger.warn("Navigator plugin trial expired ($daysSinceBuild days since build)")
-        } else {
-            logger.info("Navigator plugin trial: $daysLeft days remaining")
-        }
-
         NavigatorService.getInstance(project).startServer()
     }
 }
