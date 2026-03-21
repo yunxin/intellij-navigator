@@ -45,6 +45,10 @@ class RequestHandler(private val project: Project) {
             return NavigationResponse(status = "not_found", message = "file not found")
         }
 
+        if (request.line == null && request.matchText == null) {
+            return activate(targets)
+        }
+
         val targetsWithLine = if (request.line != null) {
             targets.map { it.copy(line = request.line - 1) } // Convert to 0-indexed
         } else {
@@ -134,25 +138,37 @@ class RequestHandler(private val project: Project) {
     }
 
     private fun navigate(targets: List<NavigationTarget>): NavigationResponse {
+        return runOnEdt(targets.size, includeCoordinates = true) { navigator.navigate(targets) }
+    }
+
+    private fun activate(targets: List<NavigationTarget>): NavigationResponse {
+        return runOnEdt(targets.size, includeCoordinates = false) { navigator.activate(targets) }
+    }
+
+    private fun runOnEdt(
+        targetCount: Int,
+        includeCoordinates: Boolean,
+        openTargets: () -> NavigationResult?
+    ): NavigationResponse {
         var result: NavigationResult? = null
 
         // Run navigation synchronously on EDT so it completes before the TCP
         // response returns. This prevents agent-term from stealing focus before
         // navigation executes, and lets us return diagnostic info.
         ApplicationManager.getApplication().invokeAndWait {
-            result = navigator.navigate(targets)
+            result = openTargets()
         }
 
-        val navResult = result
-        return if (targets.size == 1 && navResult != null) {
+        val navigationResult = result
+        return if (navigationResult != null) {
             NavigationResponse(
                 status = "ok",
-                file = navResult.filePath,
-                line = navResult.line,
-                column = navResult.column
+                file = navigationResult.filePath,
+                line = if (includeCoordinates) navigationResult.line else null,
+                column = if (includeCoordinates) navigationResult.column else null
             )
-        } else if (targets.size > 1) {
-            NavigationResponse(status = "multiple", count = targets.size)
+        } else if (targetCount > 1) {
+            NavigationResponse(status = "multiple", count = targetCount)
         } else {
             NavigationResponse(status = "ok")
         }

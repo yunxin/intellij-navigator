@@ -20,20 +20,20 @@ path for the repo (`-R` flag or `cwd`), then verify with `gh release view`.
 
 ```bash
 # Step 1: Upload (use -R to avoid cwd issues)
-gh release upload v0.1.0 \
-  build/distributions/intellij-navigator-1.0.0.zip \
-  frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.0.zip \
+gh release upload v0.1.1 \
+  build/distributions/intellij-navigator-1.0.1.zip \
+  frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.1.zip \
   --clobber -R yunxin/agent-term-public
 
 # Step 2: Verify upload succeeded
-gh release view v0.1.0 -R yunxin/agent-term-public
+gh release view v0.1.1 -R yunxin/agent-term-public
 ```
 
 ## Architecture
 
 Two separate plugins that work together:
 
-- **Backend plugin** (port 8765): Resolves files/symbols, opens files, moves caret.
+- **Backend plugin** (port 8765): Resolves files/symbols, opens or activates files, moves caret when requested.
   Runs on the IDE that has access to the project (local PyCharm or WSL backend).
 - **Frontend plugin** (port 8766): Scrolls the editor to the current caret position.
   Runs on the IDE that has a real display (local PyCharm or thin client on Windows).
@@ -42,8 +42,8 @@ On local dev, both plugins run in the same PyCharm instance. On WSL remote dev,
 the backend runs on WSL and the frontend runs on the JetBrains thin client.
 
 Navigation flow (agent-term):
-1. Send file/symbol request to port 8765 → backend opens file + moves caret
-2. Send scroll request to port 8766 → frontend calls `scrollToCaret(CENTER)`
+1. Send request to port 8765
+2. If the backend response includes `line`, send scroll request to port 8766 → frontend calls `scrollToCaret(CENTER)`
 
 ## E2E Testing
 
@@ -76,6 +76,9 @@ printf '{"type":"file","path":"some_file.py","line":50}\n' | nc -w 3 localhost 8
 
 # Step 2: frontend scrolls to caret (only needed when step 1 returns status "ok")
 printf '{"action":"scroll","file":"some_file.py","line":50,"column":0}\n' | nc -w 3 localhost 8766
+
+# Backend-only file activation (preserves remembered editor state)
+printf '{"type":"file","path":"some_file.py"}\n' | nc -w 3 localhost 8765
 ```
 
 See API.md for response format and status codes.

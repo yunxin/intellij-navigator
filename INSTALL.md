@@ -7,7 +7,7 @@
 
 ## Installation
 
-1. Build or download `intellij-navigator-1.0.0.zip`
+1. Build or download `intellij-navigator-1.0.1.zip`
 2. In your IDE: **Settings** → **Plugins** → **⚙️** (gear icon) → **Install Plugin from Disk...**
 3. Select the downloaded zip file
 4. Restart the IDE

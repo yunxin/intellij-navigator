@@ -10,7 +10,7 @@ Two plugins work together to handle navigation in JetBrains Remote Development:
 
 | Plugin | Port | Install on | Role |
 |--------|------|------------|------|
-| **intellij-navigator** (backend) | 8765 | **Host** IDE | Resolves file paths and symbols, opens files, moves the caret |
+| **intellij-navigator** (backend) | 8765 | **Host** IDE | Resolves file paths and symbols, opens or activates files, moves the caret when requested |
 | **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport to the caret position |
 
 In a local (non-remote) setup, install both plugins in the same IDE.
@@ -18,6 +18,7 @@ In a local (non-remote) setup, install both plugins in the same IDE.
 ## Features
 
 - Navigate to files by path (partial matching supported)
+- Activate a file while preserving IntelliJ's remembered caret and scroll state
 - Navigate to symbols (classes, functions, methods, variables, constants)
 - Partial, case-insensitive, and camelCase symbol matching
 - Search by code text when line numbers aren't available
@@ -40,6 +41,12 @@ Pre-built plugin zips are available on the [AgentTerm releases page](https://git
    ```bash
    echo '{"type":"file","path":"your_file.py","line":1}' | nc localhost 8765
    ```
+
+To switch to a file without forcing a new location, use:
+
+```bash
+echo '{"type":"file","path":"your_file.py"}' | nc localhost 8765
+```
 
 ## License
 

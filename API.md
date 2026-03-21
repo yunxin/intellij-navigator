@@ -8,46 +8,58 @@ Two TCP servers work together:
 
 | Server | Port | Purpose |
 |--------|------|---------|
-| **Backend** | 8765 | Resolve files/symbols, open file, move caret |
+| **Backend** | 8765 | Resolve files/symbols, open or activate files, move caret |
 | **Frontend** | 8766 | Scroll editor to caret position |
 
 - **Protocol:** TCP
 - **Format:** Newline-delimited JSON
 
-### Navigation flow
+### Request flow
 
 Send a request to the backend. Check the response `status`:
 
-- **`"ok"`** — single match, file opened, caret moved. Response includes `file` and `line`.
-  Forward them in a scroll request to the frontend:
+- **Explicit navigation** (file request with `line` or `matchText`, or any symbol/text request)
+  - **`"ok"`** — single match, file opened, caret moved. Response includes `file` and `line`.
+    Forward them in a scroll request to the frontend:
   ```
   1. backend (8765):  {"type":"file","path":"foo.py","line":42}  →  {"status":"ok","file":"/project/foo.py","line":42}
   2. frontend (8766): {"action":"scroll","file":"/project/foo.py","line":42,"column":0}  →  {"status":"ok"}
   ```
 
-- **`"multiple"`** — multiple matches, selector popup shown in IDE. No scroll request needed.
-  The user selects from the popup, which navigates and scrolls automatically.
+- **State-preserving file activation** (file request with neither `line` nor `matchText`)
+  - **`"ok"`** — single match, file activated without forcing a new caret position.
+    Response includes `file` but omits `line` and `column`. Do not send a frontend scroll request.
+  ```
+  backend (8765): {"type":"file","path":"foo.py"} → {"status":"ok","file":"/project/foo.py"}
+  ```
+
+- **`"multiple"`** — multiple matches, selector popup shown in IDE.
+  - For navigate requests, the user selection navigates and scrolls automatically.
+  - For activate requests, the user selection activates the chosen file without forcing caret/scroll state.
 
 - **`"error"`** — no matches found. No further action.
 
 The two-step flow for `"ok"` is required for remote development (WSL/Gateway) where
 the backend runs headlessly and cannot scroll the editor. The frontend plugin runs on
-the thin client where scroll APIs work. For local development, both plugins run in the
-same IDE instance.
+the thin client where scroll APIs work. File activation does not need that second step:
+the backend selects the file and IntelliJ restores the file's remembered editor state.
 
 ## Request Types
 
-### File — open a file, optionally at a line
+### File — open a file, or activate it while preserving editor state
 
 ```json
 {"type":"file","path":"foo/bar.py","line":42}
 {"type":"file","path":"foo/bar.py","matchText":"def process():"}
+{"type":"file","path":"foo/bar.py"}
 ```
 
 - **line** (optional): 1-indexed line number.
 - **matchText** (optional): expected trimmed line content.
   - With **line + matchText**: validates the line; spirals ±200 if mismatch (`"text_moved"`).
   - With **matchText only** (no line): searches the file top-to-bottom for the first match.
+- **no line + no matchText**: opens/selects the file without forcing a new caret location. Do not
+  follow that response with a frontend scroll request.
 
 Data class: `FileRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
@@ -69,7 +81,8 @@ Data class: `TextRequest` in `src/main/kotlin/com/claudecode/navigator/model/Nav
 
 ### Scroll — scroll the frontend editor to the caret (port 8766)
 
-Send after a backend `"ok"` response. Forward the `file` and `line` from that response.
+Send only after an explicit navigation request returned backend `"ok"`.
+Forward the `file` and `line` from that response.
 
 ```json
 {"action":"scroll","file":"/project/foo.py","line":42,"column":0}
@@ -82,7 +95,8 @@ Data class: `ScrollRequest` in `frontend-plugin/src/main/kotlin/com/claudecode/n
 ### Backend (port 8765)
 
 ```json
-{"status":"ok","message":"caret=42:0","file":"/project/foo.py","line":42}
+{"status":"ok","file":"/project/foo.py","line":42,"column":0}
+{"status":"ok","file":"/project/foo.py"}
 {"status":"multiple","count":3}
 {"status":"error","message":"Not found"}
 ```
@@ -118,15 +132,24 @@ def send(request: dict, host="localhost", port=BACKEND_PORT) -> dict:
         response = s.recv(1024).decode()
         return json.loads(response)
 
+def should_scroll(response: dict) -> bool:
+    return response.get("status") == "ok" and response.get("line") is not None
+
 def navigate(request: dict, host="localhost") -> dict:
-    """Send navigation request to backend, then scroll via frontend."""
+    """Send a request to the backend, then scroll only when coordinates are returned."""
     result = send(request, host, BACKEND_PORT)
-    if result.get("status") == "ok":
-        send({"action": "scroll", "file": result["file"], "line": result["line"], "column": 0}, host, FRONTEND_PORT)
+    if should_scroll(result):
+        send({
+            "action": "scroll",
+            "file": result["file"],
+            "line": result["line"],
+            "column": result.get("column", 0),
+        }, host, FRONTEND_PORT)
     return result
 
 # Examples
 navigate({"type": "file", "path": "foo.py", "line": 10})
+navigate({"type": "file", "path": "foo.py"})
 navigate({"type": "symbol", "name": "MyClass.method"})
 navigate({"type": "symbol", "name": "MyClass", "fileHint": "models.py"})
 navigate({"type": "text", "text": "def main():"})

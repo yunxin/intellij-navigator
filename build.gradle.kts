@@ -73,7 +73,7 @@ intellijPlatform {
 // so the IDE loads both plugins. Build frontend first:
 //   cd frontend-plugin && ./gradlew buildPlugin
 tasks.named<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask>("runIde") {
-    val zipFile = file("frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.0.zip")
+    val zipFile = file("frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.1.zip")
     val sandboxPlugins = layout.buildDirectory.dir("idea-sandbox/PC-${providers.gradleProperty("platformVersion").get()}/plugins")
     doFirst {
         if (zipFile.exists()) {

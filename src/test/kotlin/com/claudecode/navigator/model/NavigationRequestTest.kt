@@ -26,6 +26,17 @@ class NavigationRequestTest {
     }
 
     @Test
+    fun `parse FileRequest ignores legacy mode field`() {
+        val json = """{"type":"file","path":"test.py","mode":"activate"}"""
+        val request = NavigationRequest.parse(json) as FileRequest
+
+        assertEquals("file", request.type)
+        assertEquals("test.py", request.path)
+        assertNull(request.line)
+        assertNull(request.matchText)
+    }
+
+    @Test
     fun `parse SymbolRequest without fileHint`() {
         val json = """{"type":"symbol","name":"MyClass.method"}"""
         val request = NavigationRequest.parse(json) as SymbolRequest

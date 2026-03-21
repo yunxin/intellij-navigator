@@ -2,6 +2,7 @@ package com.claudecode.navigator.navigation
 
 import com.claudecode.navigator.model.NavigationTarget
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
@@ -16,6 +17,17 @@ class Navigator(private val project: Project) {
     private var activePopup: JBPopup? = null
 
     fun navigate(targets: List<NavigationTarget>): NavigationResult? {
+        return openTargets(targets, ::navigateToTarget)
+    }
+
+    fun activate(targets: List<NavigationTarget>): NavigationResult? {
+        return openTargets(targets, ::activateTarget)
+    }
+
+    private fun openTargets(
+        targets: List<NavigationTarget>,
+        openTarget: (NavigationTarget) -> NavigationResult
+    ): NavigationResult? {
         if (targets.isEmpty()) {
             logger.warn("No targets to navigate to")
             return null
@@ -25,9 +37,9 @@ class Navigator(private val project: Project) {
         bringToFront()
 
         return if (targets.size == 1) {
-            navigateToTarget(targets.first())
+            openTarget(targets.first())
         } else {
-            showSelectorPopup(targets)
+            showSelectorPopup(targets, openTarget)
             null
         }
     }
@@ -67,11 +79,35 @@ class Navigator(private val project: Project) {
         }
     }
 
-    private fun showSelectorPopup(targets: List<NavigationTarget>) {
+    fun activateTarget(target: NavigationTarget): NavigationResult {
+        logger.info("Activating ${target.file.path} without forcing caret position")
+
+        val fileEditorManager = FileEditorManager.getInstance(project)
+        fileEditorManager.openFile(target.file, true)
+
+        val editor = fileEditorManager.selectedTextEditor?.takeIf { selectedEditor ->
+            FileDocumentManager.getInstance().getFile(selectedEditor.document) == target.file
+        }
+
+        return if (editor != null) {
+            val caret = editor.caretModel.logicalPosition
+            val info = "caret=${caret.line + 1}:${caret.column}"
+            logger.info("ACTIVATE_DIAG: $info")
+            NavigationResult(target.file.path, caret.line + 1, caret.column, info)
+        } else {
+            logger.warn("Activated ${target.file.path} but no text editor is selected")
+            NavigationResult(target.file.path, target.line + 1, target.column, "no-editor")
+        }
+    }
+
+    private fun showSelectorPopup(
+        targets: List<NavigationTarget>,
+        openTarget: (NavigationTarget) -> NavigationResult
+    ) {
         logger.info("Showing selector popup for ${targets.size} targets")
         activePopup = SelectorPopup(project, targets) { selected ->
             activePopup = null
-            navigateToTarget(selected)
+            openTarget(selected)
         }.show()
     }
 
