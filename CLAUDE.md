@@ -14,7 +14,7 @@ export JAVA_HOME="/Applications/PyCharm CE.app/Contents/jbr/Contents/Home"
 - Backend output: `build/distributions/intellij-navigator-*.zip`
 - Frontend output: `frontend-plugin/build/distributions/intellij-navigator-frontend-*.zip`
 
-After building, upload the zips to the GitHub release on the public repo.
+After building, upload the zips to the GitHub release on the AgentTerm repo.
 **Important:** Run the `gh release upload` as a separate command using an absolute
 path for the repo (`-R` flag or `cwd`), then verify with `gh release view`.
 
@@ -23,10 +23,10 @@ path for the repo (`-R` flag or `cwd`), then verify with `gh release view`.
 gh release upload v0.1.1 \
   build/distributions/intellij-navigator-1.0.1.zip \
   frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.1.zip \
-  --clobber -R yunxin/agent-term-public
+  --clobber -R yunxin/agent-term
 
 # Step 2: Verify upload succeeded
-gh release view v0.1.1 -R yunxin/agent-term-public
+gh release view v0.1.1 -R yunxin/agent-term
 ```
 
 ## Architecture
