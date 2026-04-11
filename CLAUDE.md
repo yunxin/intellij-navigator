@@ -79,6 +79,9 @@ printf '{"action":"scroll","file":"some_file.py","line":50,"column":0}\n' | nc -
 
 # Backend-only file activation (preserves remembered editor state)
 printf '{"type":"file","path":"some_file.py"}\n' | nc -w 3 localhost 8765
+
+# Get current caret position (works in regular editors and unified diff views)
+printf '{"type":"caret"}\n' | nc -w 3 localhost 8765
 ```
 
 See API.md for response format and status codes.

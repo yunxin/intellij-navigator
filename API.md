@@ -79,6 +79,24 @@ Data class: `SymbolRequest` in `src/main/kotlin/com/claudecode/navigator/model/N
 
 Data class: `TextRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
+### Caret — get current file and line number at the caret
+
+```json
+{"type":"caret"}
+```
+
+Returns the file path and 1-indexed line number of the caret in the active editor.
+
+- **Regular editor**: returns the file and caret line directly.
+- **Unified diff view**: maps the caret position to the corresponding line in the
+  current (right-side) version of the file. If the caret is on a deleted line,
+  returns the nearest line that exists in the current version.
+
+Response: `{"status":"ok","file":"/project/foo.py","line":42}` or
+`{"status":"error","message":"no active editor"}` when no editor is focused.
+
+Data class: `CaretRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
+
 ### Scroll — scroll the frontend editor to the caret (port 8766)
 
 Send only after an explicit navigation request returned backend `"ok"`.

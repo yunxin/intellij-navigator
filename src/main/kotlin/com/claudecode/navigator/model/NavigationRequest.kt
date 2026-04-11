@@ -46,6 +46,12 @@ data class TextRequest(
     val fileHint: String? = null
 ) : NavigationRequest()
 
+@Serializable
+@SerialName("caret")
+data class CaretRequest(
+    override val type: String = "caret"
+) : NavigationRequest()
+
 data class NavigationTarget(
     val file: VirtualFile,
     val line: Int = 0,
