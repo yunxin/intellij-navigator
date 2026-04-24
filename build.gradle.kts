@@ -1,3 +1,7 @@
+import java.util.Properties
+import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
+import org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "1.9.22"
@@ -69,23 +73,87 @@ intellijPlatform {
     }
 }
 
-// For runIde: copy frontend plugin into sandbox and disable sandbox mode
-// so the IDE loads both plugins. Build frontend first:
-//   cd frontend-plugin && ./gradlew buildPlugin
-tasks.named<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask>("runIde") {
-    val zipFile = file("frontend-plugin/build/distributions/intellij-navigator-frontend-1.0.1.zip")
-    val sandboxPlugins = layout.buildDirectory.dir("idea-sandbox/PC-${providers.gradleProperty("platformVersion").get()}/plugins")
+val frontendProperties = Properties().apply {
+    file("frontend-plugin/gradle.properties").inputStream().use(::load)
+}
+val frontendVersion = frontendProperties.getProperty("pluginVersion")
+val frontendPluginZip = file("frontend-plugin/build/distributions/intellij-navigator-frontend-$frontendVersion.zip")
+val frontendPluginDirectoryName = "intellij-navigator-frontend"
+val splitModeProjectPath = providers.gradleProperty("splitModeProjectPath")
+val jetBrainsClientProfilesRoot = file("${System.getProperty("user.home")}/Library/Application Support/JetBrains")
+
+fun Project.requireFrontendPluginZip() {
+    if (!frontendPluginZip.exists()) {
+        throw GradleException(
+            "Frontend plugin zip not found at ${frontendPluginZip.path}. Build it first: cd frontend-plugin && ./gradlew buildPlugin",
+        )
+    }
+}
+
+fun Project.unpackFrontendPlugin(targetDirectory: File) {
+    requireFrontendPluginZip()
+
+    targetDirectory.mkdirs()
+    delete(targetDirectory.resolve(frontendPluginDirectoryName))
+    copy {
+        from(zipTree(frontendPluginZip))
+        into(targetDirectory)
+    }
+}
+
+fun RunIdeTask.installFrontendPlugin(targetDirectory: Provider<org.gradle.api.file.Directory>) {
     doFirst {
-        if (zipFile.exists()) {
-            copy {
-                from(zipTree(zipFile))
-                into(sandboxPlugins)
-            }
+        val sandboxPluginsDirectory = targetDirectory.get().asFile
+        project.unpackFrontendPlugin(sandboxPluginsDirectory)
+    }
+}
+
+tasks.register("installFrontendPluginForSplitMode") {
+    group = "intellij platform"
+    description = "Installs the frontend plugin into the local JetBrains Client profile used by split mode."
+    doLast {
+        val clientProfileDirectories = jetBrainsClientProfilesRoot
+            .listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("JetBrainsClient") }
+            ?.sortedBy { it.name }
+            .orEmpty()
+
+        if (clientProfileDirectories.isEmpty()) {
+            logger.lifecycle(
+                "No JetBrains Client profile found under ${jetBrainsClientProfilesRoot.path}; skipping frontend install. Launch split mode once to create the client profile, then rerun installFrontendPluginForSplitMode.",
+            )
+            return@doLast
+        }
+
+        clientProfileDirectories.forEach { profileDirectory ->
+            project.unpackFrontendPlugin(profileDirectory.resolve("plugins"))
         }
     }
+}
+
+// Monolithic runIde keeps loading both separate plugins into one sandbox.
+tasks.named<RunIdeTask>("runIde") {
+    val sandboxPlugins = layout.buildDirectory.dir("idea-sandbox/PC-${providers.gradleProperty("platformVersion").get()}/plugins")
+    installFrontendPlugin(sandboxPlugins)
     jvmArgumentProviders.add(CommandLineArgumentProvider {
         listOf("-Didea.plugin.in.sandbox.mode=false")
     })
+}
+
+intellijPlatformTesting.runIde.register("runIdeSplitMode") {
+    splitMode = true
+    splitModeTarget = SplitModeAware.SplitModeTarget.BACKEND
+    task {
+        dependsOn("installFrontendPluginForSplitMode")
+        sandboxConfigFrontendDirectory.convention(sandboxConfigDirectory.map { it.dir("frontend") })
+        sandboxPluginsFrontendDirectory.convention(sandboxPluginsDirectory.map { it.dir("frontend") })
+        sandboxSystemFrontendDirectory.convention(sandboxSystemDirectory.map { it.dir("frontend") })
+        sandboxLogFrontendDirectory.convention(sandboxLogDirectory.map { it.dir("frontend") })
+        installFrontendPlugin(sandboxPluginsFrontendDirectory)
+        argumentProviders.add(CommandLineArgumentProvider {
+            splitModeProjectPath.orNull?.let(::listOf) ?: emptyList()
+        })
+    }
 }
 
 tasks {

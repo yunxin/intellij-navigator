@@ -11,7 +11,7 @@ Two plugins work together to handle navigation in JetBrains Remote Development:
 | Plugin | Port | Install on | Role |
 |--------|------|------------|------|
 | **intellij-navigator** (backend) | 8765 | **Host** IDE | Resolves file paths and symbols, opens or activates files, moves the caret when requested |
-| **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport to the caret position |
+| **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport and reports the visible caret position |
 
 In a local (non-remote) setup, install both plugins in the same IDE.
 
@@ -22,6 +22,7 @@ In a local (non-remote) setup, install both plugins in the same IDE.
 - Navigate to symbols (classes, functions, methods, variables, constants)
 - Partial, case-insensitive, and camelCase symbol matching
 - Search by code text when line numbers aren't available
+- Report the visible file and caret position from the client IDE
 - Selector popup for multiple matches
 
 ## Download
@@ -32,6 +33,7 @@ Pre-built plugin zips are available on the [AgentTerm releases page](https://git
 
 - **[Installation Guide](INSTALL.md)** - Setup and configuration for users
 - **[API Reference](API.md)** - Protocol specification for developers
+- **[Local Split Mode](LOCAL_SPLIT_MODE.md)** - One-time bootstrap vs repeatable local Remote Dev workflow
 
 ## Quick Start
 
@@ -39,13 +41,19 @@ Pre-built plugin zips are available on the [AgentTerm releases page](https://git
 2. Open a project in your IDE
 3. Test:
    ```bash
-   echo '{"type":"file","path":"your_file.py","line":1}' | nc localhost 8765
+   printf '{"type":"file","path":"your_file.py","line":1}\n' | nc localhost 8765
    ```
 
 To switch to a file without forcing a new location, use:
 
 ```bash
-echo '{"type":"file","path":"your_file.py"}' | nc localhost 8765
+printf '{"type":"file","path":"your_file.py"}\n' | nc localhost 8765
+```
+
+To read the visible caret from the client IDE, use:
+
+```bash
+printf '{"action":"caret"}\n' | nc localhost 8766
 ```
 
 ## License

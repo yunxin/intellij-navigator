@@ -131,4 +131,15 @@ class NavigationRequestTest {
         assertEquals("test", request.text)
         assertEquals("", request.fileHint)
     }
+
+    @Test
+    fun `parse ResolveFileRequest`() {
+        val json = """{"type":"resolve_file","path":"src/main.py","matchText":"def main():","matchTextCandidates":["def main():","print('ok')"]}"""
+        val request = NavigationRequest.parse(json) as ResolveFileRequest
+
+        assertEquals("resolve_file", request.type)
+        assertEquals("src/main.py", request.path)
+        assertEquals("def main():", request.matchText)
+        assertEquals(listOf("def main():", "print('ok')"), request.matchTextCandidates)
+    }
 }

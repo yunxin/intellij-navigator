@@ -7,10 +7,17 @@
 
 ## Installation
 
-1. Build or download `intellij-navigator-1.0.1.zip`
-2. In your IDE: **Settings** → **Plugins** → **⚙️** (gear icon) → **Install Plugin from Disk...**
-3. Select the downloaded zip file
-4. Restart the IDE
+Install the plugin zips from the matching AgentTerm release:
+
+- `intellij-navigator-<version>.zip` — backend plugin
+- `intellij-navigator-frontend-<version>.zip` — frontend plugin
+
+Where to install them:
+
+- **Local IDE**: install both plugins in the same IDE
+- **Remote Development / WSL**: install the backend plugin on the **Host** IDE and the frontend plugin on the **Client** IDE
+
+Install each zip through **Settings** → **Plugins** → **⚙️** → **Install Plugin from Disk...**, then restart the IDE.
 
 ## Verify Installation
 

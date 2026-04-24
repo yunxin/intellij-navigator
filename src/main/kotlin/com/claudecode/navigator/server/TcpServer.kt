@@ -1,5 +1,6 @@
 package com.claudecode.navigator.server
 
+import com.claudecode.navigator.model.NavigationResponse
 import com.claudecode.navigator.model.NavigationResponse.Companion.toJson
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -53,21 +54,32 @@ class TcpServer(
     }
 
     private suspend fun handleClient(socket: Socket) {
-        try {
-            socket.use { client ->
+        socket.use { client ->
+            var writer: PrintWriter? = null
+            try {
                 val reader = BufferedReader(InputStreamReader(client.getInputStream()))
-                val writer = PrintWriter(client.getOutputStream(), true)
+                writer = PrintWriter(client.getOutputStream(), true)
 
                 val line = reader.readLine()
-                if (line != null) {
-                    logger.debug("Received request: $line")
-                    val response = requestHandler.handle(line)
-                    writer.println(response.toJson())
-                    logger.debug("Sent response: ${response.toJson()}")
+                if (line == null) {
+                    logger.warn("Received empty request on port $port")
+                    writer.println(NavigationResponse(status = "error", message = "empty request").toJson())
+                    return
+                }
+
+                logger.info("Received request: $line")
+                val response = requestHandler.handle(line)
+                writer.println(response.toJson())
+                logger.info("Sent response: ${response.toJson()}")
+            } catch (e: Exception) {
+                logger.warn("Error handling client connection", e)
+                val message = e.message ?: e.javaClass.simpleName
+                try {
+                    writer?.println(NavigationResponse(status = "error", message = "internal server error: $message").toJson())
+                } catch (writeError: Exception) {
+                    logger.warn("Failed to send error response to client", writeError)
                 }
             }
-        } catch (e: Exception) {
-            logger.warn("Error handling client connection", e)
         }
     }
 

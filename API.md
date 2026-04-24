@@ -9,7 +9,7 @@ Two TCP servers work together:
 | Server | Port | Purpose |
 |--------|------|---------|
 | **Backend** | 8765 | Resolve files/symbols, open or activate files, move caret |
-| **Frontend** | 8766 | Scroll editor to caret position |
+| **Frontend** | 8766 | Scroll the visible editor and report the visible caret |
 
 - **Protocol:** TCP
 - **Format:** Newline-delimited JSON
@@ -43,6 +43,11 @@ The two-step flow for `"ok"` is required for remote development (WSL/Gateway) wh
 the backend runs headlessly and cannot scroll the editor. The frontend plugin runs on
 the thin client where scroll APIs work. File activation does not need that second step:
 the backend selects the file and IntelliJ restores the file's remembered editor state.
+
+For current caret lookup, prefer the frontend server. In remote development the frontend
+owns the visible editor state, so `{"action":"caret"}` on port `8766` is the reliable
+source for visible caret state used by clients such as AgentTerm. The backend
+`{"type":"caret"}` request remains available for compatibility and local tooling.
 
 ## Request Types
 
@@ -97,6 +102,58 @@ Response: `{"status":"ok","file":"/project/foo.py","line":42}` or
 
 Data class: `CaretRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
+### Resolve file — canonicalize a file hint and optional diff anchor texts
+
+```json
+{"type":"resolve_file","path":"foo/bar.py"}
+{"type":"resolve_file","path":"gradle.properties","matchText":"pluginVersion = 1.0.1"}
+{"type":"resolve_file","path":"gradle.properties","matchText":"pluginVersion = 1.0.1","matchTextCandidates":["pluginVersion = 1.0.1","pluginVersion = 1.0.5","pluginName = IntelliJ Navigator Frontend"]}
+```
+
+Use this when the client has a file hint but needs the backend to return the canonical
+project file and, optionally, the authoritative line number.
+
+- **path**: absolute path, project-relative path, or basename-style file hint
+- **matchText** (optional): preferred trimmed line text anchor
+- **matchTextCandidates** (optional): ordered fallback anchors gathered around the caret
+
+This request is especially important for split-mode diff tabs. The frontend may know only
+a basename-style file hint plus nearby unified diff lines. The backend uses the ordered
+anchors to choose the best matching file first, then the best matching real line in that file.
+
+Response: `{"status":"ok","file":"/project/foo.py","relativePath":"foo.py","line":42,"column":0}`,
+`{"status":"ok","file":"/project/foo.py","relativePath":"foo.py"}`, or an error such as
+`{"status":"error","message":"multiple files match: foo.py","count":2}`.
+
+Data class: `ResolveFileRequest` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
+
+### Frontend caret — get the visible file and line from the client IDE (port 8766)
+
+```json
+{"action":"caret"}
+```
+
+Returns the visible file path hint from the client IDE.
+
+- **Regular editor**: returns the file, line, and column directly from the selected editor.
+- **Split-mode / frontend diff view**: may return a basename or absolute file hint and omit
+  `line`. In that case it returns `matchText` plus ordered `matchTextCandidates` from nearby
+  unified diff lines so the backend can resolve the real file and real line through
+  `{"type":"resolve_file", ...}`.
+- **Unified diff view in a local IDE**: may still return the mapped right-side line directly.
+
+Response examples:
+
+```json
+{"status":"ok","file":"/project/foo.py","line":42,"column":3}
+{"status":"ok","file":"gradle.properties","column":0,"matchText":"pluginVersion = 1.0.1","matchTextCandidates":["pluginVersion = 1.0.1","pluginVersion = 1.0.5","pluginName = IntelliJ Navigator Frontend"]}
+{"status":"error","message":"no active editor"}
+```
+
+Data classes:
+- `CaretRequest` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
+- `CaretResponse` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
+
 ### Scroll — scroll the frontend editor to the caret (port 8766)
 
 Send only after an explicit navigation request returned backend `"ok"`.
@@ -113,11 +170,13 @@ Data class: `ScrollRequest` in `frontend-plugin/src/main/kotlin/com/claudecode/n
 ### Backend (port 8765)
 
 ```json
-{"status":"ok","file":"/project/foo.py","line":42,"column":0}
-{"status":"ok","file":"/project/foo.py"}
+{"status":"ok","file":"/project/foo.py","relativePath":"foo.py","line":42,"column":0}
+{"status":"ok","file":"/project/foo.py","relativePath":"foo.py"}
 {"status":"multiple","count":3}
 {"status":"error","message":"Not found"}
 ```
+
+`relativePath` is optional. When the resolved file is under a project content root, it is returned relative to that root for display-oriented clients such as AgentTerm caret insertion.
 
 Data class: `NavigationResponse` in `src/main/kotlin/com/claudecode/navigator/model/NavigationRequest.kt`
 
@@ -127,10 +186,13 @@ Data class: `NavigationResponse` in `src/main/kotlin/com/claudecode/navigator/mo
 {"status":"ok"}
 {"status":"file_too_short"}
 {"status":"no_editor"}
+{"status":"ok","file":"/project/foo.py","line":42,"column":3}
 {"status":"error","message":"..."}
 ```
 
-Data class: `ScrollResponse` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
+Data classes:
+- `ScrollResponse` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
+- `CaretResponse` in `frontend-plugin/src/main/kotlin/com/claudecode/navigator/frontend/ScrollServer.kt`
 
 ---
 

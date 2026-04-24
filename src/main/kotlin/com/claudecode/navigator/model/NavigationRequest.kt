@@ -52,6 +52,15 @@ data class CaretRequest(
     override val type: String = "caret"
 ) : NavigationRequest()
 
+@Serializable
+@SerialName("resolve_file")
+data class ResolveFileRequest(
+    override val type: String = "resolve_file",
+    val path: String,
+    val matchText: String? = null,
+    val matchTextCandidates: List<String>? = null,
+) : NavigationRequest()
+
 data class NavigationTarget(
     val file: VirtualFile,
     val line: Int = 0,
@@ -75,6 +84,7 @@ data class NavigationResponse(
     val message: String? = null,
     val count: Int? = null,
     val file: String? = null,
+    val relativePath: String? = null,
     val line: Int? = null,
     val column: Int? = null
 ) {

@@ -20,15 +20,85 @@ import java.net.SocketException
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Serializable
-data class ScrollRequest(
+private data class FrontendActionRequest(
     val action: String,
-    val file: String,
-    val line: Int,
-    val column: Int
 )
 
 @Serializable
-data class ScrollResponse(val status: String, val message: String? = null)
+private data class ScrollRequest(
+    val action: String = "scroll",
+    val file: String,
+    val line: Int,
+    val column: Int = 0
+)
+
+@Serializable
+private data class CaretRequest(
+    val action: String = "caret"
+)
+
+@Serializable
+private data class CaretDiagnosticsRequest(
+    val action: String = "caret_diagnostics"
+)
+
+// Debug-only local investigation actions. These are intentionally undocumented and
+// are not used by AgentTerm's shipped navigation flow.
+@Serializable
+private data class ExploreObjectRequest(
+    val action: String = "explore_object",
+    val root: String = "selectedEditor",
+    val memberPath: String? = null,
+    val depth: Int = 2,
+    val maxNodes: Int = 40,
+    val maxMembers: Int = 25,
+)
+
+@Serializable
+private data class DiffProbeRequest(
+    val action: String = "diff_probe"
+)
+
+@Serializable
+private data class ScrollResponse(
+    val status: String,
+    val message: String? = null,
+)
+
+@Serializable
+private data class CaretResponse(
+    val status: String,
+    val message: String? = null,
+    val file: String? = null,
+    val line: Int? = null,
+    val column: Int? = null,
+    val matchText: String? = null,
+    val matchTextCandidates: List<String>? = null,
+)
+
+@Serializable
+private data class CaretDiagnosticsResponse(
+    val status: String,
+    val message: String,
+)
+
+@Serializable
+private data class ExploreObjectResponse(
+    val status: String,
+    val message: String,
+)
+
+@Serializable
+private data class DiffProbeResponse(
+    val status: String,
+    val message: String,
+)
+
+@Serializable
+private data class ErrorResponse(
+    val status: String = "error",
+    val message: String,
+)
 
 class ScrollServer(
     private val project: Project,
@@ -50,7 +120,7 @@ class ScrollServer(
         serverJob = scope.launch {
             try {
                 serverSocket = ServerSocket(port)
-                logger.info("Navigator Frontend scroll server started on port $port")
+                logger.info("Navigator frontend server started on port $port")
 
                 while (isActive && isRunning.get()) {
                     try {
@@ -77,27 +147,118 @@ class ScrollServer(
 
                 val line = reader.readLine()
                 if (line != null) {
-                    logger.debug("Received scroll request: $line")
-                    val response = handleRequest(line)
-                    writer.println(json.encodeToString(ScrollResponse.serializer(), response))
+                    logger.debug("Received frontend request: $line")
+                    writer.println(handleRequest(line))
                 }
             }
         } catch (e: Exception) {
-            logger.warn("Error handling scroll client", e)
+            logger.warn("Error handling frontend client", e)
         }
     }
 
-    private suspend fun handleRequest(rawJson: String): ScrollResponse {
+    private suspend fun handleRequest(rawJson: String): String {
         return try {
-            val request = json.decodeFromString(ScrollRequest.serializer(), rawJson)
-
-            when (request.action) {
-                "scroll" -> scrollToCaret(request.file, request.line, request.column)
-                else -> ScrollResponse("error", "Unknown action: ${request.action}")
+            when (json.decodeFromString(FrontendActionRequest.serializer(), rawJson).action) {
+                "scroll" -> json.encodeToString(ScrollResponse.serializer(), handleScrollRequest(rawJson))
+                "caret" -> json.encodeToString(CaretResponse.serializer(), handleCaretRequest(rawJson))
+                "caret_diagnostics" -> json.encodeToString(CaretDiagnosticsResponse.serializer(), handleCaretDiagnosticsRequest(rawJson))
+                "explore_object" -> json.encodeToString(ExploreObjectResponse.serializer(), handleExploreObjectRequest(rawJson))
+                "diff_probe" -> json.encodeToString(DiffProbeResponse.serializer(), handleDiffProbeRequest(rawJson))
+                else -> json.encodeToString(ErrorResponse.serializer(), ErrorResponse(message = "Unknown action"))
             }
         } catch (e: Exception) {
-            logger.error("Failed to handle scroll request: $rawJson", e)
-            ScrollResponse("error", e.message)
+            logger.error("Failed to handle frontend request: $rawJson", e)
+            json.encodeToString(
+                ErrorResponse.serializer(),
+                ErrorResponse(message = e.message ?: "failed to handle request"),
+            )
+        }
+    }
+
+    private suspend fun handleScrollRequest(rawJson: String): ScrollResponse {
+        val request = json.decodeFromString(ScrollRequest.serializer(), rawJson)
+        return scrollToCaret(request.file, request.line, request.column)
+    }
+
+    private fun handleCaretRequest(rawJson: String): CaretResponse {
+        json.decodeFromString(CaretRequest.serializer(), rawJson)
+        return try {
+            when (val result = CaretPositionReader(project).read()) {
+                is CaretReadResult.Success -> CaretResponse(
+                    status = "ok",
+                    file = result.position.file,
+                    line = result.position.line,
+                    column = result.position.column,
+                    matchText = result.position.matchText,
+                    matchTextCandidates = result.position.matchTextCandidates,
+                )
+                is CaretReadResult.Error -> CaretResponse(status = "error", message = result.message)
+                CaretReadResult.NoActiveEditor -> CaretResponse(status = "error", message = "no active editor")
+            }
+        } catch (t: Throwable) {
+            logger.error("Failed to read caret position", t)
+            val detail = t.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+            CaretResponse(
+                status = "error",
+                message = "caret lookup unavailable (${t.javaClass.simpleName}$detail)",
+            )
+        }
+    }
+
+    private fun handleCaretDiagnosticsRequest(rawJson: String): CaretDiagnosticsResponse {
+        json.decodeFromString(CaretDiagnosticsRequest.serializer(), rawJson)
+        return try {
+            CaretDiagnosticsResponse(
+                status = "ok",
+                message = CaretPositionReader(project).diagnose(),
+            )
+        } catch (t: Throwable) {
+            logger.error("Failed to collect caret diagnostics", t)
+            val detail = t.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+            CaretDiagnosticsResponse(
+                status = "error",
+                message = "caret diagnostics unavailable (${t.javaClass.simpleName}$detail)",
+            )
+        }
+    }
+
+    private fun handleExploreObjectRequest(rawJson: String): ExploreObjectResponse {
+        val request = json.decodeFromString(ExploreObjectRequest.serializer(), rawJson)
+        return try {
+            ExploreObjectResponse(
+                status = "ok",
+                message = FrontendObjectExplorer(project).inspect(
+                    root = request.root,
+                    memberPath = request.memberPath,
+                    depth = request.depth,
+                    maxNodes = request.maxNodes,
+                    maxMembers = request.maxMembers,
+                ),
+            )
+        } catch (t: Throwable) {
+            logger.error("Failed to explore frontend object graph", t)
+            val detail = t.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+            ExploreObjectResponse(
+                status = "error",
+                message = "Object exploration unavailable (${t.javaClass.simpleName}$detail)",
+            )
+        }
+    }
+
+    private fun handleDiffProbeRequest(rawJson: String): DiffProbeResponse {
+        json.decodeFromString(DiffProbeRequest.serializer(), rawJson)
+        return try {
+            DiffProbeResponse(
+                status = "ok",
+                message = CaretPositionReader(project).diffProbe(),
+            )
+        } catch (t: Throwable) {
+            logger.error("Failed to collect diff probe details", t)
+            val detail = t.message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+            DiffProbeResponse(
+                status = "error",
+                message = "Diff probe unavailable (${t.javaClass.simpleName}$detail)",
+            )
         }
     }
 
