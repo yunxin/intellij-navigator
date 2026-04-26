@@ -23,6 +23,7 @@ dependencies {
     intellijPlatform {
         pycharmCommunity(providers.gradleProperty("platformVersion").get())
         bundledPlugin("PythonCore")
+        bundledPlugin("Git4Idea")
         pluginVerifier()
         zipSigner()
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)

@@ -25,6 +25,7 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.python</depends>
+    <depends>Git4Idea</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <projectService serviceImplementation="com.claudecode.navigator.NavigatorService"/>
@@ -35,4 +36,14 @@
         <listener class="com.claudecode.navigator.NavigatorProjectListener"
                   topic="com.intellij.openapi.project.ProjectManagerListener"/>
     </projectListeners>
+
+    <actions>
+        <action id="com.claudecode.navigator.ShowNetDiffAgainstPreviousCommit"
+                class="com.claudecode.navigator.vcs.ShowNetDiffAgainstPreviousCommitAction"
+                text="Show Net Diff Since Previous Commit"
+                description="Compare selected working-tree files with their versions before the last commit">
+            <add-to-group group-id="ChangesViewPopupMenu" anchor="after" relative-to-action="Diff.ShowDiff"/>
+            <add-to-group group-id="Git.Stage.Tree.Menu" anchor="after" relative-to-action="Diff.ShowDiff"/>
+        </action>
+    </actions>
 </idea-plugin>

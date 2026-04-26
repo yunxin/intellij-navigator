@@ -19,6 +19,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <projectService serviceImplementation="com.claudecode.navigator.frontend.ScrollService"/>
         <projectService serviceImplementation="com.claudecode.navigator.frontend.ReadOnlyEditorService"/>
+        <diff.DiffExtension implementation="com.claudecode.navigator.frontend.ReadOnlyDiffExtension"/>
         <editorNotificationProvider implementation="com.claudecode.navigator.frontend.ReadOnlyEditorNotificationProvider"/>
         <postStartupActivity implementation="com.claudecode.navigator.frontend.FrontendStartupActivity"/>
     </extensions>

@@ -84,9 +84,28 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
         val editorEx = editor as? EditorEx ?: return
         if (editorEx.isViewer) return
 
-        editorEx.setViewer(true)
-        lockedEditors.add(editorEx)
-        logger.debug("Set editor viewer mode for ${editorEx.virtualFile?.path ?: "unknown file"}")
+        lockEditor(editorEx)
+    }
+
+    fun applyToDiffEditors(editors: Iterable<Editor>) {
+        if (!enabled || project.isDisposed) return
+
+        runOnEdt {
+            if (!enabled || project.isDisposed) return@runOnEdt
+            editors.forEach { editor ->
+                if (editor.isDisposed) return@forEach
+                val editorEx = editor as? EditorEx ?: return@forEach
+                if (editorEx.isViewer) return@forEach
+
+                lockEditor(editorEx)
+            }
+        }
+    }
+
+    private fun lockEditor(editor: EditorEx) {
+        editor.setViewer(true)
+        lockedEditors.add(editor)
+        logger.debug("Set editor viewer mode for ${editor.virtualFile?.path ?: "unknown file"}")
     }
 
     private fun unlockManagedEditors() {
@@ -108,6 +127,7 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
     private fun shouldGuard(editor: Editor): Boolean {
         if (project.isDisposed || editor.isDisposed) return false
         if (editor.project != project) return false
+        if (editor.editorKind == EditorKind.DIFF) return true
         if (editor.editorKind != EditorKind.MAIN_EDITOR) return false
 
         val file = FileDocumentManager.getInstance().getFile(editor.document)
