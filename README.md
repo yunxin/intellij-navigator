@@ -11,7 +11,7 @@ Two plugins work together to handle navigation in JetBrains Remote Development:
 | Plugin | Port | Install on | Role |
 |--------|------|------------|------|
 | **intellij-navigator** (backend) | 8765 | **Host** IDE | Resolves file paths and symbols, opens or activates files, moves the caret when requested |
-| **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport and reports the visible caret position |
+| **intellij-navigator-frontend** | 8766 | **Client** IDE | Scrolls the editor viewport, reports the visible caret, and prevents accidental direct edits with a toggleable read-only editor guard |
 
 In a local (non-remote) setup, install both plugins in the same IDE.
 
@@ -23,11 +23,14 @@ In a local (non-remote) setup, install both plugins in the same IDE.
 - Partial, case-insensitive, and camelCase symbol matching
 - Search by code text when line numbers aren't available
 - Report the visible file and caret position from the client IDE
+- Prevent accidental direct edits in frontend project editors while keeping external AgentTerm edits working
 - Selector popup for multiple matches
 
 ## Download
 
 Pre-built plugin zips are available on the [AgentTerm releases page](https://github.com/yunxin/agent-term/releases).
+
+Publishing and release-asset patching are handled by AgentTerm's [release workflow](https://github.com/yunxin/agent-term#releasing).
 
 ## Documentation
 
