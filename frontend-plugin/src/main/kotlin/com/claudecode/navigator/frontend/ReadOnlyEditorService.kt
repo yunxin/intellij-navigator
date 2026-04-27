@@ -4,15 +4,14 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.EditorKind
 import com.intellij.openapi.editor.event.EditorFactoryEvent
 import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.editor.ex.EditorEx
-import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.EditorNotifications
 import java.util.Collections
@@ -22,6 +21,7 @@ import java.util.WeakHashMap
 class ReadOnlyEditorService(private val project: Project) : Disposable {
     private val logger = Logger.getInstance(ReadOnlyEditorService::class.java)
     private val lockedEditors = Collections.newSetFromMap(WeakHashMap<Editor, Boolean>())
+    private val lockedDocuments = Collections.newSetFromMap(WeakHashMap<Document, Boolean>())
 
     @Volatile
     private var started = false
@@ -82,7 +82,6 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
         if (!enabled || !shouldGuard(editor)) return
 
         val editorEx = editor as? EditorEx ?: return
-        if (editorEx.isViewer) return
 
         lockEditor(editorEx)
     }
@@ -95,7 +94,6 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
             editors.forEach { editor ->
                 if (editor.isDisposed) return@forEach
                 val editorEx = editor as? EditorEx ?: return@forEach
-                if (editorEx.isViewer) return@forEach
 
                 lockEditor(editorEx)
             }
@@ -103,8 +101,17 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
     }
 
     private fun lockEditor(editor: EditorEx) {
-        editor.setViewer(true)
+        if (!editor.isViewer) {
+            editor.setViewer(true)
+        }
         lockedEditors.add(editor)
+
+        val document = editor.document
+        if (document.isWritable) {
+            document.setReadOnly(true)
+            lockedDocuments.add(document)
+        }
+
         logger.debug("Set editor viewer mode for ${editor.virtualFile?.path ?: "unknown file"}")
     }
 
@@ -121,26 +128,28 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
                     editorEx.setViewer(false)
                 }
             }
+
+            val documentIterator = lockedDocuments.iterator()
+            while (documentIterator.hasNext()) {
+                val document = documentIterator.next()
+                documentIterator.remove()
+
+                if (!document.isWritable) {
+                    document.setReadOnly(false)
+                }
+            }
         }
     }
 
     private fun shouldGuard(editor: Editor): Boolean {
         if (project.isDisposed || editor.isDisposed) return false
-        if (editor.project != project) return false
         if (editor.editorKind == EditorKind.DIFF) return true
-        if (editor.editorKind != EditorKind.MAIN_EDITOR) return false
-
-        val file = FileDocumentManager.getInstance().getFile(editor.document)
-            ?: editor.virtualFile
-            ?: return false
-
-        return isGuardedFile(file)
+        return editor.editorKind == EditorKind.MAIN_EDITOR
     }
 
     fun isGuardedFile(file: VirtualFile): Boolean {
         if (!enabled || project.isDisposed) return false
-        if (!file.isValid || file.isDirectory) return false
-        return isUnderProjectBase(file.path)
+        return file.isValid && !file.isDirectory
     }
 
     fun shouldShowNotification(file: VirtualFile): Boolean {
@@ -151,21 +160,6 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
         if (notificationDismissed) return
         notificationDismissed = true
         updateEditorNotifications()
-    }
-
-    private fun isUnderProjectBase(filePath: String): Boolean {
-        val basePath = project.basePath
-            ?.replace('\\', '/')
-            ?.trimEnd('/')
-            ?: return false
-        val candidate = filePath.replace('\\', '/').trimEnd('/')
-
-        return if (SystemInfo.isWindows) {
-            candidate.equals(basePath, ignoreCase = true) ||
-                candidate.startsWith("$basePath/", ignoreCase = true)
-        } else {
-            candidate == basePath || candidate.startsWith("$basePath/")
-        }
     }
 
     private fun runOnEdt(action: () -> Unit) {
