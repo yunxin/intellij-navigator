@@ -8,6 +8,9 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.EditorKind
+import com.intellij.openapi.editor.ReadOnlyModificationException
+import com.intellij.openapi.editor.event.DocumentEvent
+import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.event.EditorFactoryEvent
 import com.intellij.openapi.editor.event.EditorFactoryListener
 import com.intellij.openapi.editor.ex.EditorEx
@@ -45,11 +48,25 @@ class ReadOnlyEditorService(private val project: Project) : Disposable {
         }
     }
 
+    private val documentChangeBlocker = object : DocumentListener {
+        override fun beforeDocumentChange(event: DocumentEvent) {
+            if (!enabled || project.isDisposed) return
+            if (event.isWholeTextReplaced) return
+            val document = event.document
+            if (!lockedDocuments.contains(document)) return
+            throw ReadOnlyModificationException(
+                document,
+                "Document is locked by Agent read-only mode",
+            )
+        }
+    }
+
     fun start() {
         if (started) return
         started = true
 
         EditorFactory.getInstance().addEditorFactoryListener(listener, this)
+        EditorFactory.getInstance().eventMulticaster.addDocumentListener(documentChangeBlocker, this)
         applyToOpenEditors()
         updateEditorNotifications()
         logger.info("Agent read-only editors enabled for project: ${project.name}")
