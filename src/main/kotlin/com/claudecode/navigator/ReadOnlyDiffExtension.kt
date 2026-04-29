@@ -1,4 +1,4 @@
-package com.claudecode.navigator.frontend
+package com.claudecode.navigator
 
 import com.intellij.diff.DiffContext
 import com.intellij.diff.DiffExtension
@@ -7,12 +7,14 @@ import com.intellij.diff.FrameDiffTool
 import com.intellij.diff.requests.DiffRequest
 import com.intellij.diff.tools.util.base.DiffViewerBase
 import com.intellij.diff.tools.util.base.DiffViewerListener
-import com.intellij.diff.util.DiffNotificationProvider
-import com.intellij.diff.util.DiffUserDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.project.Project
 
+/**
+ * Locks diff editors AFTER the viewer has populated them. The initial setText path
+ * needs the document writable; we attach a DiffViewerListener so onAfterRediff /
+ * onInit lock the editors once the diff content is loaded.
+ */
 class ReadOnlyDiffExtension : DiffExtension() {
     override fun onViewerCreated(
         viewer: FrameDiffTool.DiffViewer,
@@ -22,9 +24,6 @@ class ReadOnlyDiffExtension : DiffExtension() {
         val project = context.project ?: return
         val service = ReadOnlyEditorService.getInstance(project)
         if (!service.isEnabled()) return
-
-        addReadOnlyNotification(project, service, request)
-        lockDiffEditors(service, viewer)
 
         val listener = object : DiffViewerListener() {
             override fun onInit() {
@@ -48,17 +47,5 @@ class ReadOnlyDiffExtension : DiffExtension() {
     ) {
         val editors = (viewer as? EditorDiffViewer)?.editors ?: return
         service.applyToDiffEditors(editors.filterIsInstance<Editor>())
-    }
-
-    private fun addReadOnlyNotification(
-        project: Project,
-        service: ReadOnlyEditorService,
-        request: DiffRequest,
-    ) {
-        val existing = request.getUserData(DiffUserDataKeys.NOTIFICATION_PROVIDERS).orEmpty()
-        val provider = DiffNotificationProvider {
-            ReadOnlyEditorNotificationPanelFactory.create(project, service)
-        }
-        request.putUserData(DiffUserDataKeys.NOTIFICATION_PROVIDERS, existing + provider)
     }
 }

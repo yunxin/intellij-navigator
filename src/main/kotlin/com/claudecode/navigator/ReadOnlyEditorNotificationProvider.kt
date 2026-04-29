@@ -1,4 +1,4 @@
-package com.claudecode.navigator.frontend
+package com.claudecode.navigator
 
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.project.Project
@@ -10,7 +10,7 @@ import javax.swing.JComponent
 class ReadOnlyEditorNotificationProvider : EditorNotificationProvider {
     override fun collectNotificationData(
         project: Project,
-        file: VirtualFile
+        file: VirtualFile,
     ): Function<in FileEditor, out JComponent?>? {
         val service = ReadOnlyEditorService.getInstance(project)
         if (!service.shouldShowNotification(file)) return null

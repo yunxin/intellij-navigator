@@ -58,6 +58,7 @@ class NavigatorStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         logger.info("Navigator startup activity executing for project: ${project.name}")
         NavigatorService.getInstance(project).startServer()
+        ReadOnlyEditorService.getInstance(project).start()
     }
 }
 
@@ -74,6 +75,7 @@ class NavigatorProjectListener : ProjectManagerListener {
 
     override fun projectClosing(project: Project) {
         logger.info("Project closing: ${project.name}")
+        ReadOnlyEditorService.getInstance(project).stop()
         NavigatorService.getInstance(project).stopServer()
     }
 }

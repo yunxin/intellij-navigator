@@ -45,13 +45,11 @@ class ScrollService(private val project: Project) : Disposable {
 class FrontendStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         ScrollService.getInstance(project).start()
-        ReadOnlyEditorService.getInstance(project).start()
     }
 }
 
 class FrontendProjectListener : ProjectManagerListener {
     override fun projectClosing(project: Project) {
-        ReadOnlyEditorService.getInstance(project).setEnabled(false)
         ScrollService.getInstance(project).stop()
     }
 }

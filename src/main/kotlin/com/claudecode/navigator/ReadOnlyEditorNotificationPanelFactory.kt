@@ -1,4 +1,4 @@
-package com.claudecode.navigator.frontend
+package com.claudecode.navigator
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages

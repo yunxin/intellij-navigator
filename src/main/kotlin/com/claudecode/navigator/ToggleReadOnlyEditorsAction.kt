@@ -1,4 +1,4 @@
-package com.claudecode.navigator.frontend
+package com.claudecode.navigator
 
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction

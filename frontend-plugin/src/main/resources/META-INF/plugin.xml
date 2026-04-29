@@ -18,20 +18,8 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <projectService serviceImplementation="com.claudecode.navigator.frontend.ScrollService"/>
-        <projectService serviceImplementation="com.claudecode.navigator.frontend.ReadOnlyEditorService"/>
-        <diff.DiffExtension implementation="com.claudecode.navigator.frontend.ReadOnlyDiffExtension"/>
-        <editorNotificationProvider implementation="com.claudecode.navigator.frontend.ReadOnlyEditorNotificationProvider"/>
         <postStartupActivity implementation="com.claudecode.navigator.frontend.FrontendStartupActivity"/>
     </extensions>
-
-    <actions>
-        <action id="com.claudecode.navigator.frontend.ToggleReadOnlyEditors"
-                class="com.claudecode.navigator.frontend.ToggleReadOnlyEditorsAction"
-                text="Agent Read-Only Editors"
-                description="Prevent direct typing in project source editors">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-    </actions>
 
     <projectListeners>
         <listener class="com.claudecode.navigator.frontend.FrontendProjectListener"
